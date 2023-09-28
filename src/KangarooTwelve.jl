@@ -252,4 +252,10 @@ function throughput(step::Symbol, size)
     throughput(func, size)
 end
 
+function throughputs(size=6)
+    for step in [:keccak, :turboshake, :k12_singlethread]
+        throughput(step, size)
+    end
+end
+
 end
