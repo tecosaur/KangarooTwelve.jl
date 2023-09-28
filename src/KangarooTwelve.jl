@@ -7,6 +7,8 @@ module KangarooTwelve
 # and <https://github.com/XKCP/XKCP/blob/master/lib/low/KeccakP-1600/AVX2/KeccakP-1600-AVX2.s>
 # for some hints as to what good assembly should look like.
 
+## TurboSHAKE
+
 import Base.Cartesian.@ntuple
 
 const ROUND_CONSTS_24 =
@@ -61,5 +63,55 @@ function keccak_p1600!(state::Vector{UInt64}, ::Val{nrounds}=Val{12}()) where {n
     end
     state
 end
+
+function ingest!(state::Vector{UInt64}, ::Val{capacity}, message::Vector{UInt64}) where {capacity}
+    rate = 25 - capacity ÷ 64
+    for block in Iterators.partition(message, rate)
+        view(state, 1:length(block)) .⊻= block
+        keccak_p1600!(state)
+    end
+    mod1(length(message), rate)
+end
+
+function pad!(state::Vector{UInt64}, ::Val{capacity}, finalblk::Int, delimsufix::UInt64) where {capacity}
+    rate = 25 - capacity ÷ 64
+    state[finalblk] ⊻= delimsufix
+    state[rate-1] ⊻= UInt64(0x80)
+    keccak_p1600!(state)
+end
+
+function squeeze!(state::Vector{UInt64}, ::Val{capacity}, ::Val{output}) where {capacity, output}
+    rate = 25 - capacity ÷ 64
+    if output ÷ 64 <= rate
+        view(state, 1:output÷64)
+    else
+        squeeze!(zeros(UInt64, output÷64), state, Val{capacity}())
+    end
+end
+
+function squeeze!(output::Vector{UInt64}, state::Vector{UInt64}, ::Val{capacity}) where {capacity}
+    rate = 25 - capacity ÷ 64
+    if length(output) <= rate
+        copyto!(output, 1, state, 1, output)
+    else
+        index = 1
+        while index < length(output)
+            index == 1 || keccak_p1600!(state)
+            bsize = min(rate, length(output) - index + 1)
+            copyto!(output, index, state, 1, bsize)
+            index += bsize
+        end
+    end
+    output
+end
+
+function turboshake!(state::Vector{UInt64}, capacity::Val, message::Vector{UInt64},
+                     delimsufix::UInt64=UInt64(0x80), output::Val=(function (::Val{c}) where {c} Val{c÷2}() end)(capacity))
+    finalblk = ingest!(state, capacity, message)
+    pad!(state, capacity, finalblk, delimsufix)
+    squeeze!(state, capacity, output)
+end
+
+turboshake(args...) = turboshake!(zeros(UInt64, 25), args...)
 
 end
