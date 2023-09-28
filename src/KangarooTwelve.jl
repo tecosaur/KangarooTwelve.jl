@@ -114,4 +114,36 @@ end
 
 turboshake(args...) = turboshake!(zeros(UInt64, 25), args...)
 
+## Testing
+
+function throughput(::typeof(keccak_p1600!), size) # 2 = 1KiB, 2 = 32KiB, 4 = 1MiB...
+    state = zeros(UInt64, 25)
+    rounds = round(Int, 32^size / 200)
+    start = time()
+    for _ in 1:rounds
+        keccak_p1600!(state)
+    end
+    stop = time()
+    push!([], state) # prevent the call from being optimised away
+    println(" Keccak-p[1600,12] throughput: ~$(round(Int, 32^size / (stop - start) / 1024^2)) MiB/s")
+end
+
+function throughput(::typeof(turboshake), size) # 2 = 1KiB, 2 = 32KiB, 4 = 1MiB...
+    message = rand(UInt64, round(Int, 32^size) ÷ 8)
+    start = time()
+    x = turboshake(Val(256), message)
+    stop = time()
+    push!([], x) # prevent the call from being optimised away
+    println(" TurboSHAKE128 throughput: ~$(round(Int, 32^size / (stop - start) / 1024^2)) MiB/s")
+end
+
+function throughput(step::Symbol, size)
+    func = if step == :keccak
+        keccak_p1600!
+    elseif step == :turboshake
+        turboshake
+    end
+    throughput(func, size)
+end
+
 end
