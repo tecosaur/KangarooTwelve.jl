@@ -208,7 +208,7 @@ const k12 = k12_singlethreaded
 ## Testing
 
 function throughput(::typeof(keccak_p1600), size) # 2 = 1KiB, 2 = 32KiB, 4 = 1MiB...
-    state = Tuple(zeros(UInt64, 25))
+    state = ntuple(_ -> zero(UInt64), 25)
     rounds = round(Int, 32^size / 200)
     start = time()
     for _ in 1:rounds
