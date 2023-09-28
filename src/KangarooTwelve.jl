@@ -7,9 +7,9 @@ module KangarooTwelve
 # and <https://github.com/XKCP/XKCP/blob/master/lib/low/KeccakP-1600/AVX2/KeccakP-1600-AVX2.s>
 # for some hints as to what good assembly should look like.
 
-## TurboSHAKE
-
 import Base.Cartesian.@ntuple
+
+## Keccak-p1600
 
 const ROUND_CONSTS_24 =
     (0x0000000000000001, 0x0000000000008082, 0x800000000000808a, 0x8000000080008000,
@@ -73,6 +73,8 @@ function keccak_p1600(state::NTuple{25, UInt64}, ::Val{nrounds}=Val{12}()) where
     state
 end
 
+## TurboSHAKE
+
 function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVector{UInt64}) where {capacity}
     rate = 25 - capacity ÷ 64
     for block in Iterators.partition(message, rate)
@@ -85,6 +87,27 @@ function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVec
         end |> keccak_p1600
     end
     state, mod1(length(message), rate)
+end
+
+for U in (UInt32, UInt16, UInt8)
+    @eval function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVector{$U}) where {capacity}
+        rate = 200 ÷ sizeof(U) - capacity ÷ (8 * sizeof(U))
+        for block in Iterators.partition(message, rate)
+            state = if length(block) == rate
+                @ntuple 25 i -> if i <= rate÷$(sizeof(UInt64)÷sizeof(U))
+                    state[i] ⊻ reduce(+, @ntuple $(sizeof(UInt64)÷sizeof(U)) k ->
+                        UInt64(block[$(sizeof(UInt64)÷sizeof(U))*(i-1)+k]) <<
+                            (8*sizeof(U)*(k-1)))
+                else state[i] end
+            else
+                @ntuple 25 i ->
+                    state[i] ⊻ reduce(+, @ntuple $(sizeof(UInt64)÷sizeof(U)) k ->
+                        UInt64(get(block, $(sizeof(UInt64)÷sizeof(U))*(i-1)+k,
+                                   zero(U))) << (8*sizeof(U)*(k-1)))
+            end |> keccak_p1600
+        end
+        state, fld1(mod1(length(message), rate), sizeof(U))
+    end
 end
 
 function pad(state::NTuple{25, UInt64}, ::Val{capacity}, finalblk::Int, delimsufix::UInt8) where {capacity}
@@ -119,7 +142,7 @@ function squeeze!(output::Vector{UInt64}, state::NTuple{25, UInt64}, ::Val{capac
     output
 end
 
-function turboshake(message::AbstractVector{UInt64},
+function turboshake(message::AbstractVector{<:Union{UInt64, UInt32, UInt16, UInt8}},
                     delimsufix::UInt8=0x80, capacity::Val = Val{CAPACITY}(),
                     output::Val = (function (::Val{c}) where {c} Val{c÷2}() end)(capacity))
     state, finalblk = ingest(EMPTY_STATE, capacity, message)
