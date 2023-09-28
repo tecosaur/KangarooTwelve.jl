@@ -73,7 +73,7 @@ function keccak_p1600(state::NTuple{25, UInt64}, ::Val{nrounds}=Val{12}()) where
     state
 end
 
-function ingest!(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVector{UInt64}) where {capacity}
+function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVector{UInt64}) where {capacity}
     rate = 25 - capacity ÷ 64
     for block in Iterators.partition(message, rate)
         state = if length(block) == rate
@@ -87,14 +87,14 @@ function ingest!(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVe
     state, mod1(length(message), rate)
 end
 
-function pad!(state::NTuple{25, UInt64}, ::Val{capacity}, finalblk::Int, delimsufix::UInt64) where {capacity}
+function pad(state::NTuple{25, UInt64}, ::Val{capacity}, finalblk::Int, delimsufix::UInt64) where {capacity}
     rate = 25 - capacity ÷ 64
     state = Base.setindex(state, state[finalblk] ⊻ delimsufix, finalblk)
     state = Base.setindex(state, state[rate-1] ⊻ UInt64(0x80), rate-1)
     keccak_p1600(state)
 end
 
-function squeeze!(state::NTuple{25, UInt64}, ::Val{capacity}, ::Val{output}) where {capacity, output}
+function squeeze(state::NTuple{25, UInt64}, ::Val{capacity}, ::Val{output}) where {capacity, output}
     rate = 25 - capacity ÷ 64
     if output ÷ 64 <= rate
         state[1:output÷64]
@@ -123,9 +123,9 @@ function turboshake(message::AbstractVector{UInt64},
                     delimsufix::UInt64=UInt64(0x80),
                     capacity::Val = Val{CAPACITY}(),
                     output::Val = (function (::Val{c}) where {c} Val{c÷2}() end)(capacity))
-    state, finalblk = ingest!(EMPTY_STATE, capacity, message)
-    state = pad!(state, capacity, finalblk, delimsufix)
-    squeeze!(state, capacity, output)
+    state, finalblk = ingest(EMPTY_STATE, capacity, message)
+    state = pad(state, capacity, finalblk, delimsufix)
+    squeeze(state, capacity, output)
 end
 
 # ## KangarooTwelve
