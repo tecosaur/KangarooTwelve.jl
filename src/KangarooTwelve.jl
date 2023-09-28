@@ -87,9 +87,9 @@ function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVec
     state, mod1(length(message), rate)
 end
 
-function pad(state::NTuple{25, UInt64}, ::Val{capacity}, finalblk::Int, delimsufix::UInt64) where {capacity}
+function pad(state::NTuple{25, UInt64}, ::Val{capacity}, finalblk::Int, delimsufix::UInt8) where {capacity}
     rate = 25 - capacity ÷ 64
-    state = Base.setindex(state, state[finalblk] ⊻ delimsufix, finalblk)
+    state = Base.setindex(state, state[finalblk] ⊻ UInt64(delimsufix), finalblk)
     state = Base.setindex(state, state[rate-1] ⊻ UInt64(0x80), rate-1)
     keccak_p1600(state)
 end
@@ -120,8 +120,7 @@ function squeeze!(output::Vector{UInt64}, state::NTuple{25, UInt64}, ::Val{capac
 end
 
 function turboshake(message::AbstractVector{UInt64},
-                    delimsufix::UInt64=UInt64(0x80),
-                    capacity::Val = Val{CAPACITY}(),
+                    delimsufix::UInt8=0x80, capacity::Val = Val{CAPACITY}(),
                     output::Val = (function (::Val{c}) where {c} Val{c÷2}() end)(capacity))
     state, finalblk = ingest(EMPTY_STATE, capacity, message)
     state = pad(state, capacity, finalblk, delimsufix)
@@ -135,19 +134,19 @@ const CAPACITY = 256
 
 function k12_singlethreaded(message::Vector{UInt64})
     high, low =  if length(message) <= BLOCK_SIZE÷8
-        turboshake(message, UInt64(0x07))
+        turboshake(message, 0x07)
     else
         nodestar = message[1:BLOCK_SIZE÷8]
         rest = view(message, BLOCK_SIZE÷8+1:length(message))
         push!(nodestar, 0xc000000000000000)
         n = 0
         for block in Iterators.partition(rest, BLOCK_SIZE÷8)
-            push!(nodestar, turboshake(block, UInt64(0x0b), Val{CAPACITY}(),
+            push!(nodestar, turboshake(block, 0x0b, Val{CAPACITY}(),
                                        Val(64)) |> first)
             n += 1
         end
         push!(nodestar, UInt64(n), 0x000000000000ffff)
-        turboshake(nodestar, UInt64(0x06), Val{CAPACITY}(), Val{128}())
+        turboshake(nodestar, 0x06, Val{CAPACITY}(), Val{128}())
     end
     UInt128(high) << 64 + low
 end
@@ -163,7 +162,7 @@ function k12_singlethreaded(io::IO)
     push!(nodestar, 0xc000000000000000)
     size, n = BLOCK_SIZE, 0
     while (size = readbytes!(io, block)) == BLOCK_SIZE
-        push!(nodestar, turboshake(reinterpret(UInt64, block), UInt64(0x0b),
+        push!(nodestar, turboshake(reinterpret(UInt64, block), 0x0b,
                                    Val{CAPACITY}(), Val{64}()) |> first)
         n += 1
     end
@@ -172,11 +171,11 @@ function k12_singlethreaded(io::IO)
         copyto!(block, size + 1, zeros(UInt8, nfill), 1, nfill)
         push!(nodestar, turboshake(
             reinterpret(UInt64, view(block, 1:size+nfill)),
-            UInt64(0x0b), Val{CAPACITY}(), Val{64}()) |> first)
+            0x0b, Val{CAPACITY}(), Val{64}()) |> first)
         n += 1
     end
     push!(nodestar, UInt64(n), 0x000000000000ffff)
-    high, low = turboshake(nodestar, UInt64(0x06))
+    high, low = turboshake(nodestar, 0x06)
     UInt128(high) << 64 + low
 end
 
