@@ -1,0 +1,61 @@
+#+title: KangarooTwelve
+#+author: tecosaur
+
+A pure-Julia implementation of the [[https://keccak.team/kangarootwelve.html][KangarooTwelve]] hashing scheme, so named
+because it consists of 12 rounds of [[https://keccak.team/keccak.html][Keccak]] ([[https://keccak.team/turboshake.html][TurboSHAKE]]128) with kangaroo
+hopping, allowing for parallel [[https://en.wikipedia.org/wiki/Merkle_tree][tree]]-ish hashing termed "leaves stapled to a pole".
+
+This scheme presents a particularly good balance of:
++ Simplicity (Keccak + sponge + hopping)
++ Security (128-bit)
++ Speed (up to ~2bytes/cycle)
+
+It is currently an [[https://datatracker.ietf.org/doc/draft-irtf-cfrg-kangarootwelve/][IETF draft]].
+
+* The Keccak-p permutation
+
+There are some lovely figures elucidating the Keccak algorithm in [[https://keccak.team/files/Keccak-reference-3.0.pdf][the reference]],
+which I'll pull out.
+
+This is a variable-round permutation, with up to 24 rounds. The last round
+performed matches the final Keccak-f permutation round.
+
+Each round of permutation consists of five stages, termed \theta, \rho, \pi, \chi, and \iota.
+These all operate on a 200-byte block.
+
+[[https://keccak.team/files/Keccak-f-PiecesOfState.png]]
+
+** \theta step
+
+Compute the parity of five columns, and xor-diffuse the parity into nearby columns.
+
+[[https://keccak.team/files/Keccak-f-Theta.png]]
+
+** \rho step
+
+Bitwise-rotate each of the 25-lanes by a different triangular number.
+
+[[https://keccak.team/files/Keccak-f-Rho.png]]
+
+** \pi step
+
+Permute each lane in a fixed pattern.
+
+[[https://keccak.team/files/Keccak-f-Pi.png]]
+
+** \chi step
+
+Intra-row bitwise combination, this provides the non-linearity.
+
+[[https://keccak.team/files/Keccak-f-Chi.png]]
+
+** \iota step
+
+The first lane is (xor-)mixed with a LSFR sequence across rounds. This serves to
+disrupt the symmetry of the scheme.
+
+* Sponge
+
+TODO: describe
+
+[[https://keccak.team/images/Sponge-150.png]]
