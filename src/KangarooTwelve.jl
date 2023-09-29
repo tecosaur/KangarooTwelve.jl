@@ -27,11 +27,20 @@ const πs =
     (1, 7, 13, 19, 25, 4, 10, 11, 17, 23, 2, 8, 14,
      20, 21, 5, 6, 12, 18, 24, 3, 9, 15, 16, 22)
 
+const χs =
+    (( 2,  3), ( 3,  4), ( 4,  5), ( 5,  1), ( 1,  2), ( 7,  8),
+     ( 8,  9), ( 9, 10), (10,  6), ( 6,  7), (12, 13), (13, 14),
+     (14, 15), (15, 11), (11, 12), (17, 18), (18, 19), (19, 20),
+     (20, 16), (16, 17), (22, 23), (23, 24), (24, 25), (25, 21),
+     (21, 22))
+
 const EMPTY_STATE = @ntuple 25 _ -> zero(UInt64)
 
 function keccak_p1600(state::NTuple{25, UInt64}, ::Val{nrounds}=Val{12}()) where {nrounds}
     rol64(a, n) = (a << n) | (a >> (64 - n))
-    # ~90ns
+    # ~90ns (NB: the in-round times don't quite add up to this,
+    # so they're not quite right, but they should still be a useful
+    # indication)
     @inbounds for round in (25 - nrounds):24
         # θ (diffusion)
         C = @ntuple 5 i -> reduce(⊻, @ntuple 5 k -> state[i+5*(k-1)]) # ~12ns
@@ -40,33 +49,7 @@ function keccak_p1600(state::NTuple{25, UInt64}, ::Val{nrounds}=Val{12}()) where
         # ρ (rotation) and π (lane permutation)
         state = @ntuple 25 i -> rol64(state[πs[i]], ρs[i]) # ~6ns
         # χ (intra-row bitwise combination, nonlinear)
-        state = ( # ~10ns
-            state[ 1] ⊻ (~state[ 2] & state[ 3]),
-            state[ 2] ⊻ (~state[ 3] & state[ 4]),
-            state[ 3] ⊻ (~state[ 4] & state[ 5]),
-            state[ 4] ⊻ (~state[ 5] & state[ 1]),
-            state[ 5] ⊻ (~state[ 1] & state[ 2]),
-            state[ 6] ⊻ (~state[ 7] & state[ 8]),
-            state[ 7] ⊻ (~state[ 8] & state[ 9]),
-            state[ 8] ⊻ (~state[ 9] & state[10]),
-            state[ 9] ⊻ (~state[10] & state[ 6]),
-            state[10] ⊻ (~state[ 6] & state[ 7]),
-            state[11] ⊻ (~state[12] & state[13]),
-            state[12] ⊻ (~state[13] & state[14]),
-            state[13] ⊻ (~state[14] & state[15]),
-            state[14] ⊻ (~state[15] & state[11]),
-            state[15] ⊻ (~state[11] & state[12]),
-            state[16] ⊻ (~state[17] & state[18]),
-            state[17] ⊻ (~state[18] & state[19]),
-            state[18] ⊻ (~state[19] & state[20]),
-            state[19] ⊻ (~state[20] & state[16]),
-            state[20] ⊻ (~state[16] & state[17]),
-            state[21] ⊻ (~state[22] & state[23]),
-            state[22] ⊻ (~state[23] & state[24]),
-            state[23] ⊻ (~state[24] & state[25]),
-            state[24] ⊻ (~state[25] & state[21]),
-            state[25] ⊻ (~state[21] & state[22]),
-        )
+        state = @ntuple 25 i -> state[i] ⊻ (~state[χs[i][1]] & state[χs[i][2]]) # ~10ns
         # ι (symmetry disruptor)
         state = Base.setindex(state, state[1] ⊻ ROUND_CONSTS_24[round], 1) # ~3ns
     end
