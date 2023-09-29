@@ -4,6 +4,7 @@ authors = ["TEC <git@tecosaur.net>"]
 version = "0.1.0"
 
 [deps]
+MD5 = "6ac74813-4b46-53a4-afec-0b5dc9d7885c"
 SIMD = "fdea26ae-647d-5447-a871-4b548cad5224"
 
 [extras]

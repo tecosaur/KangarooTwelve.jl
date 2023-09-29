@@ -205,51 +205,6 @@ end
 # TODO: Multithreaded implementation + heuristic
 const k12 = k12_singlethreaded
 
-## Testing
-
-function throughput(::typeof(keccak_p1600), size) # 2 = 1KiB, 2 = 32KiB, 4 = 1MiB...
-    state = Tuple(zeros(UInt64, 25))
-    rounds = round(Int, 32^size / 200)
-    start = time()
-    for _ in 1:rounds
-        state = keccak_p1600(state)
-    end
-    stop = time()
-    push!([], state) # prevent the call from being optimised away
-    println(" Keccak-p[1600,12] throughput: ~$(round(Int, 32^size / (stop - start) / 1024^2)) MiB/s")
-end
-
-function throughput(::typeof(turboshake), size)
-    message = rand(UInt64, round(Int, 32^size) ÷ 8)
-    start = time()
-    x = turboshake(message)
-    stop = time()
-    push!([], x) # prevent the call from being optimised away
-    println(" TurboSHAKE128 throughput: ~$(round(Int, 32^size / (stop - start) / 1024^2)) MiB/s")
-end
-
-function throughput(::typeof(k12_singlethreaded), size)
-    message = rand(UInt64, round(Int, 32^size) ÷ 8)
-    start = time()
-    x = k12_singlethreaded(message)
-    stop = time()
-    push!([], x) # prevent the call from being optimised away
-    println(" K12 (singlethreaded) throughput: ~$(round(Int, 32^size / (stop - start) / 1024^2)) MiB/s")
-end
-
-function throughput(step::Symbol, size)
-    func = if step == :keccak
-        keccak_p1600
-    elseif step == :turboshake
-        turboshake
-    elseif step == :k12_singlethread
-        k12_singlethreaded
-    elseif step == :k12
-        k12
-    else
-        error("I don't know that step of the k12 algorithm.")
-    end
-    throughput(func, size)
-end
+include("throughput.jl")
 
 end
