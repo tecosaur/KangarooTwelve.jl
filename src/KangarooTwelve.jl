@@ -27,7 +27,7 @@ const πs =
     (1, 7, 13, 19, 25, 4, 10, 11, 17, 23, 2, 8, 14,
      20, 21, 5, 6, 12, 18, 24, 3, 9, 15, 16, 22)
 
-const EMPTY_STATE = Tuple(zeros(UInt64, 25))
+const EMPTY_STATE = @ntuple 25 _ -> zero(UInt64)
 
 function keccak_p1600(state::NTuple{25, UInt64}, ::Val{nrounds}=Val{12}()) where {nrounds}
     rol64(a, n) = (a << n) | (a >> (64 - n))
