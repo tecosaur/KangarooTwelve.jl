@@ -11,6 +11,8 @@ import Base.Cartesian.@ntuple
 
 ## Keccak-p1600
 
+const EMPTY_STATE = @ntuple 25 _ -> zero(UInt64)
+
 const ROUND_CONSTS_24 =
     (0x0000000000000001, 0x0000000000008082, 0x800000000000808a, 0x8000000080008000,
      0x000000000000808b, 0x0000000080000001, 0x8000000080008081, 0x8000000000008009,
@@ -33,8 +35,6 @@ const χs =
      (14, 15), (15, 11), (11, 12), (17, 18), (18, 19), (19, 20),
      (20, 16), (16, 17), (22, 23), (23, 24), (24, 25), (25, 21),
      (21, 22))
-
-const EMPTY_STATE = @ntuple 25 _ -> zero(UInt64)
 
 function keccak_p1600(state::NTuple{25, UInt64}, ::Val{nrounds}=Val{12}()) where {nrounds}
     rol64(a, n) = (a << n) | (a >> (64 - n))
