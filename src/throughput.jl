@@ -30,7 +30,7 @@ function throughput(::typeof(keccak_p1600), size)
 end
 
 throughput(::typeof(turboshake), size) =
-    throughput(UInt64, turboshake, size, "TurboSHAKE-128")
+    throughput(UInt64, m -> turboshake(UInt128, m), size, "TurboSHAKE-128")
 
 throughput(::typeof(k12_singlethreaded), size) =
     throughput(UInt64, k12_singlethreaded, size, "KangarooTwelve (singlethreaded)")

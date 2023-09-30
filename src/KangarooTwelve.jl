@@ -100,16 +100,31 @@ function pad(state::NTuple{25, UInt64}, ::Val{capacity}, finalblk::Int, delimsuf
     keccak_p1600(state)
 end
 
-function squeeze(state::NTuple{25, UInt64}, ::Val{capacity}, ::Val{output}) where {capacity, output}
+function squeeze(::Type{NTuple{count, U}}, state::NTuple{25, UInt64}, ::Val{capacity}=Val{CAPACITY}()) where {capacity, count, U<:Unsigned}
     rate = 25 - capacity ÷ 64
-    if output ÷ 64 <= rate
-        state[1:output÷64]
+    if count * sizeof(U) > rate * sizeof(UInt64)
+        chunksize = rate * sizeof(UInt64) ÷ sizeof(U)
+        chunkfirst = squeeze(NTuple{chunksize, U}, state, Val{capacity}())
+        chunkrest = squeeze(NTuple{count - chunksize, U}, keccak_p1600(state), Val{capacity}())
+        ntuple(i -> if i <= chunksize
+                   chunkfirst[i]
+               else
+                   chunkrest[i - chunksize]
+               end, Val{count}())
+    elseif U == UInt128
+        ntuple(i -> UInt128(state[2*(i-1)+1]) << 64 + state[2*i], Val{count}())
+    elseif U == UInt64
+        ntuple(i -> state[i], Val{count}())
     else
-        squeeze!(zeros(UInt64, output÷64), state, Val{capacity}())
+        byteratio = sizeof(UInt64)÷sizeof(U)
+        ntuple(i -> (state[fld1(i, byteratio)] >> (8 * sizeof(U) * mod(-i, byteratio))) % U, Val{count}())
     end
 end
 
-function squeeze!(output::Vector{UInt64}, state::NTuple{25, UInt64}, ::Val{capacity}) where {capacity}
+squeeze(::Type{U}, state::NTuple{25, UInt64}, capacity::Val=Val{CAPACITY}()) where {U <: Unsigned} =
+    squeeze(NTuple{1, U}, state, capacity) |> first
+
+function squeeze!(output::Vector{UInt64}, state::NTuple{25, UInt64}, ::Val{capacity}=Val{CAPACITY}()) where {capacity}
     rate = 25 - capacity ÷ 64
     if length(output) <= rate
         output .= state[1:length(output)]
@@ -118,19 +133,19 @@ function squeeze!(output::Vector{UInt64}, state::NTuple{25, UInt64}, ::Val{capac
         while index < length(output)
             index == 1 || (state = keccak_p1600(state))
             bsize = min(rate, length(output) - index + 1)
-            output[index:index+bsize] .= state[1:bsize]
+            output[index:index+bsize-1] .= state[1:bsize]
             index += bsize
         end
     end
     output
 end
 
-function turboshake(message::AbstractVector{<:Union{UInt64, UInt32, UInt16, UInt8}},
-                    delimsufix::UInt8=0x80, capacity::Val = Val{CAPACITY}(),
-                    output::Val = (function (::Val{c}) where {c} Val{c÷2}() end)(capacity))
+function turboshake(output::Type, # <:Unsigned or NTuple{n, <:Unsigned}
+                    message::AbstractVector{<:Union{UInt64, UInt32, UInt16, UInt8}},
+                    delimsufix::UInt8=0x80, capacity::Val = Val{CAPACITY}())
     state, finalblk = ingest(EMPTY_STATE, capacity, message)
     state = pad(state, capacity, finalblk, delimsufix)
-    squeeze(state, capacity, output)
+    squeeze(output, state, capacity)
 end
 
 # ## KangarooTwelve
@@ -139,50 +154,46 @@ const BLOCK_SIZE = 8192
 const CAPACITY = 256
 
 function k12_singlethreaded(message::Vector{UInt64})
-    high, low =  if length(message) <= BLOCK_SIZE÷8
-        turboshake(message, 0x07)
+    if length(message) <= BLOCK_SIZE÷8
+        turboshake(UInt128, message, 0x07)
     else
         nodestar = message[1:BLOCK_SIZE÷8]
         rest = view(message, BLOCK_SIZE÷8+1:length(message))
         push!(nodestar, 0xc000000000000000)
         n = 0
         for block in Iterators.partition(rest, BLOCK_SIZE÷8)
-            push!(nodestar, turboshake(block, 0x0b, Val{CAPACITY}(),
-                                       Val(64)) |> first)
+            push!(nodestar, turboshake(UInt64, block, 0x0b))
             n += 1
         end
         push!(nodestar, UInt64(n), 0x000000000000ffff)
-        turboshake(nodestar, 0x06, Val{CAPACITY}(), Val{128}())
+        turboshake(UInt128, nodestar, 0x06) |> first
     end
-    UInt128(high) << 64 + low
 end
 
 function k12_singlethreaded(io::IO)
     block = Vector{UInt8}(undef, BLOCK_SIZE)
     if readbytes!(io, block) < BLOCK_SIZE
         # small
-        return
+        return zero(UInt128)
     end
     nodestar = Vector{UInt64}(undef, BLOCK_SIZE÷8)
     copyto!(nodestar, 1, reinterpret(UInt64, block), 1, BLOCK_SIZE÷8)
     push!(nodestar, 0xc000000000000000)
     size, n = BLOCK_SIZE, 0
     while (size = readbytes!(io, block)) == BLOCK_SIZE
-        push!(nodestar, turboshake(reinterpret(UInt64, block), 0x0b,
-                                   Val{CAPACITY}(), Val{64}()) |> first)
+        push!(nodestar, turboshake(UInt64, reinterpret(UInt64, block), 0x0b))
         n += 1
     end
     if size < BLOCK_SIZE
         nfill = 8 - size % 8
         copyto!(block, size + 1, zeros(UInt8, nfill), 1, nfill)
-        push!(nodestar, turboshake(
-            reinterpret(UInt64, view(block, 1:size+nfill)),
-            0x0b, Val{CAPACITY}(), Val{64}()) |> first)
+        push!(nodestar, turboshake(UInt64,
+                                   reinterpret(UInt64, view(block, 1:size+nfill)),
+                                   0x0b))
         n += 1
     end
     push!(nodestar, UInt64(n), 0x000000000000ffff)
-    high, low = turboshake(nodestar, 0x06)
-    UInt128(high) << 64 + low
+    turboshake(UInt128, nodestar, 0x06)
 end
 
 # TODO: Multithreaded implementation + heuristic
