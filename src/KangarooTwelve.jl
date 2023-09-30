@@ -72,25 +72,25 @@ function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVec
     state, mod1(length(message), rate)
 end
 
-for U in (UInt32, UInt16, UInt8)
-    @eval function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVector{$U}) where {capacity}
-        rate = 200 ÷ sizeof(U) - capacity ÷ (8 * sizeof(U))
-        for block in Iterators.partition(message, rate)
-            state = if length(block) == rate
-                @ntuple 25 i -> if i <= rate÷$(sizeof(UInt64)÷sizeof(U))
-                    state[i] ⊻ reduce(+, @ntuple $(sizeof(UInt64)÷sizeof(U)) k ->
-                        UInt64(block[$(sizeof(UInt64)÷sizeof(U))*(i-1)+k]) <<
-                            (8*sizeof(U)*(k-1)))
-                else state[i] end
-            else
-                @ntuple 25 i ->
-                    state[i] ⊻ reduce(+, @ntuple $(sizeof(UInt64)÷sizeof(U)) k ->
-                        UInt64(get(block, $(sizeof(UInt64)÷sizeof(U))*(i-1)+k,
-                                   zero(U))) << (8*sizeof(U)*(k-1)))
-            end |> keccak_p1600
-        end
-        state, fld1(mod1(length(message), rate), sizeof(U))
+# 5% overhead compared to a UInt64 message
+function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVector{U}) where {capacity, U<:Union{UInt32,UInt16,UInt8}}
+    rate = 200 ÷ sizeof(U) - capacity ÷ (8 * sizeof(U))
+    ratio = sizeof(UInt64)÷sizeof(U)
+    for block in Iterators.partition(message, rate)
+        state = if length(block) == rate
+            @ntuple 25 i -> if i <= rate÷ratio
+                state[i] ⊻ reduce(+, ntuple(
+                    k -> UInt64(block[ratio*(i-1)+k]) << (8*sizeof(U)*(k-1)),
+                    Val{ratio}()))
+            else state[i] end
+        else
+            @ntuple 25 i ->
+                state[i] ⊻ reduce(+, ntuple(
+                    k -> UInt64(get(block, ratio*(i-1)+k, zero(U))) << (8*sizeof(U)*(k-1)),
+                    Val{ratio}()))
+        end |> keccak_p1600
     end
+    state, fld1(mod1(length(message), rate), sizeof(U))
 end
 
 function pad(state::NTuple{25, UInt64}, ::Val{capacity}, finalblk::Int, delimsufix::UInt8) where {capacity}
