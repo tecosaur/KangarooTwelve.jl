@@ -303,6 +303,21 @@ function ingest(trunk::Trunk, block::AbstractVector{U}) where {U <: Union{UInt64
     end)
 end
 
+function ingest_length(trunk::Trunk, val::Int, ::Val{bufsize}=Val{8}()) where {bufsize}
+    buffer = ntuple(_ -> 0x00, Val{bufsize}())
+    point = 0
+    while (val > 0)
+        buffer = Base.setindex(buffer, UInt8(val % 2^8), point+=1)
+        val ÷= 2^8
+    end
+    for i in point:-1:1
+        trunk = ingest(trunk, buffer[i])
+    end
+    ingest(trunk, UInt8(point))
+end
+
+ingest(trunk::Trunk, x, xs...) = ingest(ingest(trunk, x), xs...)
+
 function k12_singlethreaded(message::AbstractVector{U}) where {U <: Union{UInt64, UInt32, UInt16, UInt8}}
     if length(message) <= BLOCK_SIZE÷sizeof(U)
         return turboshake(UInt128, message, K12_SUFFIXES.one)
@@ -317,7 +332,7 @@ function k12_singlethreaded(message::AbstractVector{U}) where {U <: Union{UInt64
     for block in Iterators.partition(rest, BLOCK_SIZE÷sizeof(U))
         trunk, n = ingest(trunk, block), n+1
     end
-    trunk = ingest(ingest(ingest(trunk, UInt32(n)), 0xffff), 0x01)
+    trunk = ingest(ingest_length(trunk, n), 0xffff, 0x01)
     state = trunk.state
     state = if trunk.byte == 1
         trunk.state
@@ -344,7 +359,7 @@ function k12_singlethreaded(io::IO)
     while readbytes!(io, block) > 0
         trunk, n = ingest(trunk, block), n+1
     end
-    trunk = ingest(ingest(ingest(trunk, UInt32(n)), 0xffff), 0x01)
+    trunk = ingest(ingest_length(trunk, n), 0xffff, 0x01)
     state = trunk.state
     state = if trunk.byte == 1
         trunk.state
