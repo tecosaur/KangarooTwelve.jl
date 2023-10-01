@@ -58,6 +58,13 @@ end
 
 ## TurboSHAKE
 
+function ingest(state::NTuple{25, UInt64}, block::NTuple{rate, UInt64}) where {rate}
+    state = @ntuple 25 i -> if i <= rate
+        state[i] ⊻ block[i]
+    else state[i] end
+    keccak_p1600(state), rate
+end
+
 function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVector{UInt64}) where {capacity}
     rate = 25 - capacity ÷ 64
     for block in Iterators.partition(message, rate)
