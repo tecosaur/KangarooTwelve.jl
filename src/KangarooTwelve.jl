@@ -275,28 +275,29 @@ end
 
 function k12_singlethreaded(io::IO)
     block = Vector{UInt8}(undef, BLOCK_SIZE)
-    if readbytes!(io, block) < BLOCK_SIZE
-        # small
-        return zero(UInt128)
+    if (size = readbytes!(io, block)) < BLOCK_SIZE
+        return k12_singlethreaded(view(block, 1:size))
     end
-    nodestar = Vector{UInt64}(undef, BLOCK_SIZE÷8)
-    copyto!(nodestar, 1, reinterpret(UInt64, block), 1, BLOCK_SIZE÷8)
-    push!(nodestar, 0xc000000000000000)
-    size, n = BLOCK_SIZE, 0
-    while (size = readbytes!(io, block)) == BLOCK_SIZE
-        push!(nodestar, turboshake(UInt64, reinterpret(UInt64, block), K12_SUFFIXES.leaf))
-        n += 1
+    trunk = Trunk()
+    for i in 1:BLOCK_SIZE÷sizeof(UInt8)
+        trunk = ingest(trunk, block[i])
     end
-    if size < BLOCK_SIZE
-        nfill = 8 - size % 8
-        copyto!(block, size + 1, zeros(UInt8, nfill), 1, nfill)
-        push!(nodestar, turboshake(UInt64,
-                                   reinterpret(UInt64, view(block, 1:size+nfill)),
-                                   K12_SUFFIXES.leaf))
-        n += 1
+    trunk = ingest(trunk, 0xc000000000000000)
+    n = 0
+    while readbytes!(io, block) > 0
+        trunk, n = ingest(trunk, block), n+1
     end
-    push!(nodestar, UInt64(n), 0x000000000000ffff)
-    turboshake(UInt128, nodestar, K12_SUFFIXES.many)
+    trunk = ingest(ingest(ingest(trunk, UInt32(n)), 0xffff), 0x01)
+    state = trunk.state
+    state = if trunk.byte == 1
+        trunk.state
+    else
+        # Do extra roll of trunk keccak if needed (likely)
+        ingest(trunk.state, trunk.growth) |> first
+    end
+    state = pad(state, Val{CAPACITY}(),
+                mod1(n, length(trunk.growth)), K12_SUFFIXES.many)
+    squeeze(UInt128, state, Val{CAPACITY}())
 end
 
 # TODO: Multithreaded implementation + heuristic
