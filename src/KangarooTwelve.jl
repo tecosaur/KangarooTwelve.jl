@@ -36,6 +36,13 @@ const χs =
      (20, 16), (16, 17), (22, 23), (23, 24), (24, 25), (25, 21),
      (21, 22))
 
+"""
+    keccak_p1600(state::NTuple{25, UInt64}, ::Val{nrounds}=Val{12}())
+
+Apply the Keccak-p[`nrounds`, 1600] permutation to `state`. This is formally
+defined in [the Keccak reference](https://keccak.team/files/Keccak-reference-3.0.pdf)
+ and formalised in [FIPS 202](https://csrc.nist.gov/pubs/fips/202/final).
+"""
 function keccak_p1600(state::NTuple{25, UInt64}, ::Val{nrounds}=Val{12}()) where {nrounds}
     rol64(a, n) = (a << n) | (a >> (64 - n))
     # ~90ns (NB: the in-round times don't quite add up to this,
@@ -58,6 +65,14 @@ end
 
 ## TurboSHAKE
 
+"""
+    ingest(state::NTuple{25, UInt64}, block::NTuple{rate, UInt64})
+
+Ingest a single `block` of input (with implied `rate`) into `state`.
+
+The first `rate` elements of `state` are `xor`'d `block`, and then the
+state is permuted with `keccak_p1600`.
+"""
 function ingest(state::NTuple{25, UInt64}, block::NTuple{rate, UInt64}) where {rate}
     state = @ntuple 25 i -> if i <= rate
         state[i] ⊻ block[i]
@@ -65,6 +80,14 @@ function ingest(state::NTuple{25, UInt64}, block::NTuple{rate, UInt64}) where {r
     keccak_p1600(state), rate
 end
 
+"""
+    ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVector{<:Unsigned})
+
+Ingest `message` into `state`, with the rate calculated based on `capacity`.
+
+This breaks `message` into rate-sized blocks and then ingests them (as per
+`ingest(state, ::NTuple{rate, UInt64})`) in turn.
+"""
 function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVector{UInt64}) where {capacity}
     rate = 25 - capacity ÷ 64
     for block in Iterators.partition(message, rate)
@@ -107,6 +130,12 @@ function pad(state::NTuple{25, UInt64}, ::Val{capacity}, finalblk::Int, delimsuf
     keccak_p1600(state)
 end
 
+"""
+    squeeze(outtype::Type, state::NTuple{25, UInt64}, ::Val{capacity}=Val{CAPACITY}())
+
+Squeeze an `outtype` out of `state`. `outtype` can be an `Unsigned` type or an
+unsigned `NTuple`.
+"""
 function squeeze(::Type{NTuple{count, U}}, state::NTuple{25, UInt64}, ::Val{capacity}=Val{CAPACITY}()) where {capacity, count, U<:Unsigned}
     rate = 25 - capacity ÷ 64
     if count * sizeof(U) > rate * sizeof(UInt64)
@@ -131,6 +160,11 @@ end
 squeeze(::Type{U}, state::NTuple{25, UInt64}, capacity::Val=Val{CAPACITY}()) where {U <: Unsigned} =
     squeeze(NTuple{1, U}, state, capacity) |> first
 
+"""
+    squeeze!(output::Vector{UInt64}, state::NTuple{25, UInt64}, ::Val{capacity}=Val{CAPACITY}())
+
+Squeeze `state` into `output`.
+"""
 function squeeze!(output::Vector{UInt64}, state::NTuple{25, UInt64}, ::Val{capacity}=Val{CAPACITY}()) where {capacity}
     rate = 25 - capacity ÷ 64
     if length(output) <= rate
@@ -171,6 +205,16 @@ end
 Trunk{rate}() where {rate} = Trunk(EMPTY_STATE, ntuple(_ -> zero(UInt64), Val{rate}()), 1)
 Trunk() = Trunk{25 - CAPACITY ÷ 64}()
 
+"""
+    overwrite(larger::Ubig, smaller::Usmall, byte::Int=1)
+    overwrite(larger::NTuple{size, Ubig}, smaller::Usmall, byte::Int=1)
+
+Write `smaller` into `larger`, with `smaller` starting at `byte`
+within `larger` (1 being the start).
+
+When writing `smaller` into a `NTuple`, it will be split across entries if
+necessary.
+"""
 function overwrite(larger::Ubig, smaller::Usmall, byte::Int=1) where {Ubig <: Unsigned, Usmall <: Unsigned}
     # REVIEW should `htol` need to be used here?
     Ubig == Usmall && return smaller
@@ -209,6 +253,13 @@ function overwrite(larger::NTuple{size, Ubig}, smaller::Usmall, byte::Int=1) whe
     end
 end
 
+"""
+    ingest(trunk::Trunk, entry::Unsigned)
+
+Ingest a single `entry` into `trunk`. This updates the partial-block stored in
+`trunk`, and when full merges it with the `state` and runs a `keccak_p1600`
+round when full.
+"""
 function ingest(trunk::Trunk{rate}, entry::U) where {rate, U <: Union{UInt64, UInt32, UInt16, UInt8}}
     if trunk.byte <= 8 * rate - sizeof(U)+1 # Fits within `growth`
         growth = overwrite(trunk.growth, entry, trunk.byte)
@@ -236,6 +287,12 @@ function ingest(trunk::Trunk{rate}, entry::U) where {rate, U <: Union{UInt64, UI
     end
 end
 
+"""
+    ingest(trunk::Trunk, block::AbstractVector{<:Unsigned})
+
+Ingest `block` into `trunk`. This is done by applying `turboshake` to `block`,
+extracting a `UInt32`, and then ingesting that `UInt32` into `trunk`.
+"""
 function ingest(trunk::Trunk, block::AbstractVector{U}) where {U <: Union{UInt64, UInt32, UInt16, UInt8}}
     ingest(trunk, if U == UInt64
         turboshake(UInt32, block, K12_SUFFIXES.leaf)
@@ -301,6 +358,12 @@ function k12_singlethreaded(io::IO)
 end
 
 # TODO: Multithreaded implementation + heuristic
+"""
+    k12(data::AbstractVector{<:Unsigned})
+    k12(data::IO)
+
+Hash `data` with the KangarooTwelve scheme.
+"""
 const k12 = k12_singlethreaded
 
 include("throughput.jl")
