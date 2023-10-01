@@ -48,35 +48,34 @@ end
 
 @testset "Trunk ingestion" begin
     trunk = ingest(Trunk(), 0x11)
-    @test trunk.growth[1] == 0x1100000000000000
+    rate = (((::Trunk{rate}) where {rate}) -> rate)(trunk)
+    @test trunk.state[1] == 0x1100000000000000
     trunk = ingest(trunk, 0x2222)
-    @test trunk.growth[1] == 0x1122220000000000
+    @test trunk.state[1] == 0x1122220000000000
     trunk = ingest(trunk, 0x33333333)
-    @test trunk.growth[1] == 0x1122223333333300
+    @test trunk.state[1] == 0x1122223333333300
     trunk = ingest(trunk, 0x4444)
-    @test trunk.growth[1] == 0x1122223333333344
-    @test trunk.growth[2] == 0x4400000000000000
+    @test trunk.state[1] == 0x1122223333333344
+    @test trunk.state[2] == 0x4400000000000000
     trunk = ingest(trunk, 0x5555555555555555)
-    @test trunk.growth[2] == 0x4455555555555555
-    @test trunk.growth[3] == 0x5500000000000000
+    @test trunk.state[2] == 0x4455555555555555
+    @test trunk.state[3] == 0x5500000000000000
     trunk = ingest(trunk, 0x66, 0x6666, 0x66666666)
-    @test trunk.growth[3] == 0x5566666666666666
-    @test trunk.growth[4] == 0x0000000000000000
-    for _ in 4:length(trunk.growth)-1
+    @test trunk.state[3] == 0x5566666666666666
+    @test trunk.state[4] == 0x0000000000000000
+    for _ in 4:rate-1
         trunk = ingest(trunk, 0x1234567812345678)
     end
-    @test sum(trunk.growth) == 0xe0579be82468acf7
-    @test all(==(0), trunk.state)
-    @test !all(==(0), ingest(trunk, 0x1111111111111111).state)
-    @test all(==(0), ingest(trunk, 0x1111111111111111).growth)
-    trunk = ingest(trunk, 0x22222222, 0x1111111111111111)
-    @test !all(==(0), ingest(trunk, 0x1111111111111111).state)
-    @test trunk.growth[1] == 0x1111111100000000
-    @test all(==(0), trunk.growth[2:end])
+    @test sum(trunk.state) == 0xe0579be82468acf7
+    @test ingest(trunk, 0x1111111111111111).state[1] == 0x97aa5d6561f93ac2
+    @test ingest(trunk, 0x22222222, 0x1111111111111111).state[1] == 0x1111111100000000
 end
 
 @testset "Length encoding" begin
-    @test ingest_length(Trunk(), 0).growth[1] == 0x0000000000000000
-    @test ingest_length(Trunk(), 12).growth[1] == 0x0c01000000000000
-    @test ingest_length(Trunk(), 65538).growth[1] == 0x0100020300000000
+    @test ingest_length(Trunk(), 0).state[1] == 0x0000000000000000
+    @test ingest_length(Trunk(), 12).state[1] == 0x0c01000000000000
+    @test ingest_length(Trunk(), 65538).state[1] == 0x0100020300000000
 end
+
+bitpattern(num::Int) =
+    Iterators.take(Iterators.cycle(0x00:0xfa), num) |> collect
