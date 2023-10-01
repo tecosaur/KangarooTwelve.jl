@@ -77,7 +77,7 @@ function ingest(state::NTuple{25, UInt64}, block::NTuple{rate, UInt64}) where {r
     state = @ntuple 25 i -> if i <= rate
         state[i] ⊻ block[i]
     else state[i] end
-    keccak_p1600(state), rate
+    keccak_p1600(state), 1
 end
 
 """
@@ -99,7 +99,7 @@ function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVec
             @ntuple 25 i -> state[i] ⊻ get(block, i, zero(UInt64))
         end |> keccak_p1600
     end
-    state, mod1(length(message), rate)
+    state, mod1(1+length(message), rate)
 end
 
 # 5% overhead compared to a UInt64 message
@@ -120,13 +120,13 @@ function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVec
                     Val{ratio}()))
         end |> keccak_p1600
     end
-    state, fld1(mod1(length(message), rate), sizeof(U))
+    state, fld1(mod1(1+length(message), rate), sizeof(U))
 end
 
-function pad(state::NTuple{25, UInt64}, ::Val{capacity}, finalblk::Int, delimsufix::UInt8) where {capacity}
+function pad(state::NTuple{25, UInt64}, ::Val{capacity}, finalblk::Int, delimsuffix::UInt8) where {capacity}
     rate = 25 - capacity ÷ 64
-    state = Base.setindex(state, state[finalblk] ⊻ UInt64(delimsufix), finalblk)
-    state = Base.setindex(state, state[rate-1] ⊻ UInt64(0x80), rate-1)
+    state = Base.setindex(state, state[finalblk] ⊻ UInt64(delimsuffix), finalblk)
+    state = Base.setindex(state, state[rate] ⊻ UInt64(0x80) << 56, rate)
     keccak_p1600(state)
 end
 
@@ -183,9 +183,9 @@ end
 
 function turboshake(output::Type, # <:Unsigned or NTuple{n, <:Unsigned}
                     message::AbstractVector{<:Union{UInt64, UInt32, UInt16, UInt8}},
-                    delimsufix::UInt8=0x80, capacity::Val = Val{CAPACITY}())
+                    delimsuffix::UInt8=0x80, capacity::Val = Val{CAPACITY}())
     state, finalblk = ingest(EMPTY_STATE, capacity, message)
-    state = pad(state, capacity, finalblk, delimsufix)
+    state = pad(state, capacity, finalblk, delimsuffix)
     squeeze(output, state, capacity)
 end
 
