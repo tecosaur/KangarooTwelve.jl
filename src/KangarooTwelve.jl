@@ -236,7 +236,7 @@ function ingest(trunk::Trunk{rate}, entry::U) where {rate, U <: Union{UInt64, UI
     end
 end
 
-function k12_singlethreaded_allocfree(message::Vector{UInt64})
+function k12_singlethreaded(message::Vector{UInt64})
     if length(message) <= BLOCK_SIZE÷8
         return turboshake(UInt128, message, K12_SUFFIXES.one)
     end
@@ -255,23 +255,6 @@ function k12_singlethreaded_allocfree(message::Vector{UInt64})
     # Do extra roll of trunk keccak if needed (likely)
     state = pad(trunk.state, Val{CAPACITY}(), mod1(n, rate), K12_SUFFIXES.many)
     squeeze(UInt128, state, Val{CAPACITY}())
-end
-
-function k12_singlethreaded(message::Vector{UInt64})
-    if length(message) <= BLOCK_SIZE÷8
-        turboshake(UInt128, message, K12_SUFFIXES.one)
-    else
-        nodestar = message[1:BLOCK_SIZE÷8]
-        rest = view(message, BLOCK_SIZE÷8+1:length(message))
-        push!(nodestar, 0xc000000000000000)
-        n = 0
-        for block in Iterators.partition(rest, BLOCK_SIZE÷8)
-            push!(nodestar, turboshake(UInt64, block, K12_SUFFIXES.leaf))
-            n += 1
-        end
-        push!(nodestar, UInt64(n), 0x000000000000ffff)
-        turboshake(UInt128, nodestar, K12_SUFFIXES.many) |> first
-    end
 end
 
 function k12_singlethreaded(io::IO)
