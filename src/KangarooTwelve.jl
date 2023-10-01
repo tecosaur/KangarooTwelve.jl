@@ -160,6 +160,8 @@ end
 const BLOCK_SIZE = 8192
 const CAPACITY = 256
 
+const K12_SUFFIXES = (one=0x07, many=0x06, leaf=0x0b)
+
 struct Trunk{rate}
     state::NTuple{25, UInt64}
     growth::NTuple{rate, UInt64}
@@ -236,7 +238,7 @@ end
 
 function k12_singlethreaded_allocfree(message::Vector{UInt64})
     if length(message) <= BLOCK_SIZE÷8
-        return turboshake(UInt128, message, 0x07)
+        return turboshake(UInt128, message, K12_SUFFIXES.one)
     end
     trunk = Trunk()
     rate = length(trunk.growth)
@@ -247,28 +249,28 @@ function k12_singlethreaded_allocfree(message::Vector{UInt64})
     trunk = ingest(trunk, 0xc000000000000000)
     n, rest = 0, view(message, BLOCK_SIZE÷8+1:length(message))
     for block in Iterators.partition(rest, BLOCK_SIZE÷8)
-        ingest(trunk, turboshake(UInt32, block, 0x0b))
+        ingest(trunk, turboshake(UInt32, block, K12_SUFFIXES.leaf))
     end
     trunk = ingest(ingest(ingest(trunk, UInt32(n)), 0xffff), 0x01)
     # Do extra roll of trunk keccak if needed (likely)
-    state = pad(trunk.state, Val{CAPACITY}(), mod1(n, rate), 0x06)
+    state = pad(trunk.state, Val{CAPACITY}(), mod1(n, rate), K12_SUFFIXES.many)
     squeeze(UInt128, state, Val{CAPACITY}())
 end
 
 function k12_singlethreaded(message::Vector{UInt64})
     if length(message) <= BLOCK_SIZE÷8
-        turboshake(UInt128, message, 0x07)
+        turboshake(UInt128, message, K12_SUFFIXES.one)
     else
         nodestar = message[1:BLOCK_SIZE÷8]
         rest = view(message, BLOCK_SIZE÷8+1:length(message))
         push!(nodestar, 0xc000000000000000)
         n = 0
         for block in Iterators.partition(rest, BLOCK_SIZE÷8)
-            push!(nodestar, turboshake(UInt64, block, 0x0b))
+            push!(nodestar, turboshake(UInt64, block, K12_SUFFIXES.leaf))
             n += 1
         end
         push!(nodestar, UInt64(n), 0x000000000000ffff)
-        turboshake(UInt128, nodestar, 0x06) |> first
+        turboshake(UInt128, nodestar, K12_SUFFIXES.many) |> first
     end
 end
 
@@ -283,7 +285,7 @@ function k12_singlethreaded(io::IO)
     push!(nodestar, 0xc000000000000000)
     size, n = BLOCK_SIZE, 0
     while (size = readbytes!(io, block)) == BLOCK_SIZE
-        push!(nodestar, turboshake(UInt64, reinterpret(UInt64, block), 0x0b))
+        push!(nodestar, turboshake(UInt64, reinterpret(UInt64, block), K12_SUFFIXES.leaf))
         n += 1
     end
     if size < BLOCK_SIZE
@@ -291,11 +293,11 @@ function k12_singlethreaded(io::IO)
         copyto!(block, size + 1, zeros(UInt8, nfill), 1, nfill)
         push!(nodestar, turboshake(UInt64,
                                    reinterpret(UInt64, view(block, 1:size+nfill)),
-                                   0x0b))
+                                   K12_SUFFIXES.leaf))
         n += 1
     end
     push!(nodestar, UInt64(n), 0x000000000000ffff)
-    turboshake(UInt128, nodestar, 0x06)
+    turboshake(UInt128, nodestar, K12_SUFFIXES.many)
 end
 
 # TODO: Multithreaded implementation + heuristic
