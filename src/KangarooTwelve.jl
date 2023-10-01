@@ -160,6 +160,101 @@ end
 const BLOCK_SIZE = 8192
 const CAPACITY = 256
 
+struct Trunk{rate}
+    state::NTuple{25, UInt64}
+    growth::NTuple{rate, UInt64}
+    byte::Int # index
+end
+
+Trunk{rate}() where {rate} = Trunk(EMPTY_STATE, ntuple(_ -> zero(UInt64), Val{rate}()), 1)
+Trunk() = Trunk{25 - CAPACITY ÷ 64}()
+
+function overwrite(larger::Ubig, smaller::Usmall, byte::Int=1) where {Ubig <: Unsigned, Usmall <: Unsigned}
+    # REVIEW should `htol` need to be used here?
+    Ubig == Usmall && return smaller
+    shift = 8 * (sizeof(Ubig) - byte - sizeof(Usmall) + 1)
+    mask = ~(Ubig(typemax(Usmall)) << shift)
+    value = Ubig(smaller) << shift
+    larger & mask | value
+end
+
+function overwrite(larger::NTuple{size, Ubig}, smaller::Usmall, byte::Int=1) where {size, Ubig <: Unsigned, Usmall <: Unsigned}
+    @boundscheck byte + sizeof(Usmall)-1 <= sizeof(Ubig) * size ||
+        throw(BoundsError(larger, fld1(byte + sizeof(Usmall)-1, sizeof(Ubig))))
+    largeindex = fld1(byte, sizeof(Ubig))
+    if byte % sizeof(Ubig) == 1 || fld1(byte + sizeof(Usmall), sizeof(Ubig)) == largeindex
+        # If `smaller` will fit neatly into the next `larger`, we can
+        # just `overwrite` the targeted `larger` element with `smaller`.
+        ntuple(i -> if i == largeindex
+                          overwrite(larger[i], smaller, mod1(byte, sizeof(Ubig)))
+                      else larger[i] end,
+                      Val{size}())
+    else
+        # It doesn't fit, which means we'll need to split it up.
+        # We can't actually use `overwrite(::Ubig, ::Usmall, byte)` as
+        # we run into the potential of needing a UInt48 etc.
+        shift = 8 * ((byte + sizeof(Usmall)-1) % sizeof(Ubig))
+        mask1 = ~(Ubig(typemax(Usmall)) >> shift)
+        value1 = Ubig(smaller) >> shift
+        mask2 = ~(Ubig(typemax(Usmall)) << (8*sizeof(Ubig) - shift))
+        value2 = Ubig(smaller) << (8*sizeof(Ubig) - shift)
+        ntuple(i -> if i == largeindex
+                   larger[i] & mask1 | value1
+               elseif i == largeindex + 1
+                   larger[i] & mask2 | value2
+               else larger[i] end,
+               Val{size}())
+    end
+end
+
+function ingest(trunk::Trunk{rate}, entry::U) where {rate, U <: Union{UInt64, UInt32, UInt16, UInt8}}
+    if trunk.byte <= 8 * rate - sizeof(U)+1 # Fits within `growth`
+        growth = overwrite(trunk.growth, entry, trunk.byte)
+        nextbyte = trunk.byte + sizeof(U)
+        if nextbyte == 8 * rate + 1 # Rollover
+            # TODO change `ntuple(_ -> zero(UInt64), Val{rate}())` to just
+            # `growth`, once we've verified that this is behaving correctly.
+            Trunk(ingest(trunk.state, growth) |> first,
+                  ntuple(_ -> zero(UInt64), Val{rate}()), 1)
+        else
+            Trunk(trunk.state, growth, nextbyte)
+        end
+    else # Wrap-around needed, this also means we must be on the last byte of `growth`.
+        growth = trunk.growth
+        glast, gfirst = overwrite((growth[end], zero(UInt64)), entry,
+                                  mod1(trunk.byte, sizeof(eltype(growth))))
+        # See <https://github.com/JuliaLang/julia/issues/15276> for why the `let` is needed.
+        growth = let growth=growth; ntuple(i -> if i == rate glast else growth[i] end, Val{rate}()) end
+        state = ingest(trunk.state, growth) |> first
+        # REVIEW if this seems like it might affect performance, we could
+        # try changing `zero(UInt64)` to `growth[i]` so that less bytes need
+        # to be modified. With `zero(UInt64)` it's easier to debug/inspect though.
+        growth = ntuple(i -> if i == 1 gfirst else zero(UInt64) end, Val{rate}())
+        Trunk(state, growth, mod1(trunk.byte + sizeof(U), sizeof(eltype(growth))))
+    end
+end
+
+function k12_singlethreaded_allocfree(message::Vector{UInt64})
+    if length(message) <= BLOCK_SIZE÷8
+        return turboshake(UInt128, message, 0x07)
+    end
+    trunk = Trunk()
+    rate = length(trunk.growth)
+    # REVIEW is this the right way to initially ingest?
+    for i in 1:rate
+        trunk = ingest(trunk, message[i])
+    end
+    trunk = ingest(trunk, 0xc000000000000000)
+    n, rest = 0, view(message, BLOCK_SIZE÷8+1:length(message))
+    for block in Iterators.partition(rest, BLOCK_SIZE÷8)
+        ingest(trunk, turboshake(UInt32, block, 0x0b))
+    end
+    trunk = ingest(ingest(ingest(trunk, UInt32(n)), 0xffff), 0x01)
+    # Do extra roll of trunk keccak if needed (likely)
+    state = pad(trunk.state, Val{CAPACITY}(), mod1(n, rate), 0x06)
+    squeeze(UInt128, state, Val{CAPACITY}())
+end
+
 function k12_singlethreaded(message::Vector{UInt64})
     if length(message) <= BLOCK_SIZE÷8
         turboshake(UInt128, message, 0x07)
