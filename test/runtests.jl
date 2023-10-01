@@ -1,6 +1,9 @@
 using KangarooTwelve
 using Test
 
+import KangarooTwelve: keccak_p1600, ingest, pad, squeeze, turboshake,
+    Trunk, overwrite, ingest_length, k12_singlethreaded, k12
+
 @testset "keccak" begin
     keccak_1600_init =
         (0xf1258f7940e1dde7, 0x84d5ccf933c0478a, 0xd598261ea65aa9ee, 0xbd1547306f80494d,
@@ -38,7 +41,42 @@ using Test
          0x900e3129e7badd7b, 0x202a9ec5faa3cce8, 0x5b3402464e1c3db6, 0x609f4e62a44c1059,
          0x20d06cd26a8fbf5c)
 
-    @test KangarooTwelve.keccak_p1600(keccak_1600_init) == keccak_1600_12rounds
-    @test KangarooTwelve.keccak_p1600(keccak_1600_init12) == keccak_1600_24rounds
-    @test KangarooTwelve.keccak_p1600(keccak_1600_init, Val(24)) == keccak_1600_24rounds
+    @test keccak_p1600(keccak_1600_init) == keccak_1600_12rounds
+    @test keccak_p1600(keccak_1600_init12) == keccak_1600_24rounds
+    @test keccak_p1600(keccak_1600_init, Val(24)) == keccak_1600_24rounds
+end
+
+@testset "Trunk ingestion" begin
+    trunk = ingest(Trunk(), 0x11)
+    @test trunk.growth[1] == 0x1100000000000000
+    trunk = ingest(trunk, 0x2222)
+    @test trunk.growth[1] == 0x1122220000000000
+    trunk = ingest(trunk, 0x33333333)
+    @test trunk.growth[1] == 0x1122223333333300
+    trunk = ingest(trunk, 0x4444)
+    @test trunk.growth[1] == 0x1122223333333344
+    @test trunk.growth[2] == 0x4400000000000000
+    trunk = ingest(trunk, 0x5555555555555555)
+    @test trunk.growth[2] == 0x4455555555555555
+    @test trunk.growth[3] == 0x5500000000000000
+    trunk = ingest(trunk, 0x66, 0x6666, 0x66666666)
+    @test trunk.growth[3] == 0x5566666666666666
+    @test trunk.growth[4] == 0x0000000000000000
+    for _ in 4:length(trunk.growth)-1
+        trunk = ingest(trunk, 0x1234567812345678)
+    end
+    @test sum(trunk.growth) == 0xe0579be82468acf7
+    @test all(==(0), trunk.state)
+    @test !all(==(0), ingest(trunk, 0x1111111111111111).state)
+    @test all(==(0), ingest(trunk, 0x1111111111111111).growth)
+    trunk = ingest(trunk, 0x22222222, 0x1111111111111111)
+    @test !all(==(0), ingest(trunk, 0x1111111111111111).state)
+    @test trunk.growth[1] == 0x1111111100000000
+    @test all(==(0), trunk.growth[2:end])
+end
+
+@testset "Length encoding" begin
+    @test ingest_length(Trunk(), 0).growth[1] == 0x0000000000000000
+    @test ingest_length(Trunk(), 12).growth[1] == 0x0c01000000000000
+    @test ingest_length(Trunk(), 65538).growth[1] == 0x0100020300000000
 end
