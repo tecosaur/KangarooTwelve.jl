@@ -236,24 +236,40 @@ function ingest(trunk::Trunk{rate}, entry::U) where {rate, U <: Union{UInt64, UI
     end
 end
 
-function k12_singlethreaded(message::Vector{UInt64})
-    if length(message) <= BLOCK_SIZE÷8
+function ingest(trunk::Trunk, block::AbstractVector{U}) where {U <: Union{UInt64, UInt32, UInt16, UInt8}}
+    ingest(trunk, if U == UInt64
+        turboshake(UInt32, block, K12_SUFFIXES.leaf)
+    elseif length(block) == BLOCK_SIZE ÷ sizeof(U)
+        turboshake(UInt32, reinterpret(UInt64, block), K12_SUFFIXES.leaf)
+    else
+        turboshake(UInt32, block, K12_SUFFIXES.leaf)
+    end)
+end
+
+function k12_singlethreaded(message::AbstractVector{U}) where {U <: Union{UInt64, UInt32, UInt16, UInt8}}
+    if length(message) <= BLOCK_SIZE÷sizeof(U)
         return turboshake(UInt128, message, K12_SUFFIXES.one)
     end
     trunk = Trunk()
-    rate = length(trunk.growth)
-    # REVIEW is this the right way to initially ingest?
-    for i in 1:rate
+    # REVIEW is this a good way to initially ingest?
+    for i in 1:BLOCK_SIZE÷sizeof(U)
         trunk = ingest(trunk, message[i])
     end
     trunk = ingest(trunk, 0xc000000000000000)
-    n, rest = 0, view(message, BLOCK_SIZE÷8+1:length(message))
-    for block in Iterators.partition(rest, BLOCK_SIZE÷8)
-        ingest(trunk, turboshake(UInt32, block, K12_SUFFIXES.leaf))
+    n, rest = 0, view(message, BLOCK_SIZE÷sizeof(U)+1:length(message))
+    for block in Iterators.partition(rest, BLOCK_SIZE÷sizeof(U))
+        trunk, n = ingest(trunk, block), n+1
     end
     trunk = ingest(ingest(ingest(trunk, UInt32(n)), 0xffff), 0x01)
-    # Do extra roll of trunk keccak if needed (likely)
-    state = pad(trunk.state, Val{CAPACITY}(), mod1(n, rate), K12_SUFFIXES.many)
+    state = trunk.state
+    state = if trunk.byte == 1
+        trunk.state
+    else
+        # Do extra roll of trunk keccak if needed (likely)
+        ingest(trunk.state, trunk.growth) |> first
+    end
+    state = pad(state, Val{CAPACITY}(),
+                mod1(n, length(trunk.growth)), K12_SUFFIXES.many)
     squeeze(UInt128, state, Val{CAPACITY}())
 end
 
