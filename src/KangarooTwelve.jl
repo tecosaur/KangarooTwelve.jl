@@ -237,8 +237,10 @@ function turboshake(output::Type, # <:Unsigned or NTuple{n, <:Unsigned}
                     message::AbstractVector{<:Union{UInt64, UInt32, UInt16, UInt8}},
                     delimsuffix::UInt8=0x80, ::Val{capacity} = Val{CAPACITY}()) where {capacity}
     state = ingest(EMPTY_STATE, Val{capacity}(), message)
-    lastindex = mod1(length(message) * sizeof(eltype(message)) + 1, (1600 - capacity) ÷ 8)
-    state = pad(state, Val{capacity}(), lastindex, delimsuffix)
+    # It might seem like `mod1` would make sense here, but for *whatever reason*
+    # that seems to cause allocations. This took several hours to pinpoint.
+    lastbyte = (length(message) * sizeof(eltype(message))) % (200 - capacity ÷ 8) + 1
+    state = pad(state, Val{capacity}(), lastbyte, delimsuffix)
     squeeze(output, state, Val{capacity}())
 end
 
