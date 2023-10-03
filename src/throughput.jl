@@ -5,8 +5,19 @@
 #  than a minor dent to your sanity if you care about small things
 #  like not being a godawful hack.
 
-function throughput(U::Type{<:Unsigned}, func, size, label=nameof(func))
-    message = rand(U, round(Int, 1024*4^size ÷ sizeof(U)))
+# A convenient hack
+Base.rand(::Type{Vec{N, T}}) where {N, T} =
+    Vec{N, T}(ntuple(_ -> rand(T), Val{N}()))
+Base.rand(::Type{Vec{N, T}}, n::Integer) where {N, T} =
+    ntuple(_ -> rand(Vec{N, T}), 1:n)
+
+function throughput(U::Type{<:Unsigned}, @nospecialize(func::Function), size, label=nameof(func); simd::Int=1)
+    mlen = round(Int, 1024*4^size ÷ (sizeof(U) * simd))
+    message = if simd == 1
+        rand(U, mlen)
+    else
+        ntuple(_ -> rand(U, mlen), simd)
+    end
     start = time()
     x = func(message)
     stop = time()
@@ -14,12 +25,16 @@ function throughput(U::Type{<:Unsigned}, func, size, label=nameof(func))
     println(" $label throughput: ~$(round(Int, 1024*4^size / (stop - start) / 1024^2)) MiB/s")
 end
 
-throughput(func::Function, size, label=nameof(func)) =
-    throughput(UInt8, func, size, label)
+throughput(func::Function, size, label=nameof(func); simd::Int=1) =
+    throughput(UInt8, func, size, label; simd)
 
-function throughput(::typeof(keccak_p1600), size)
-    state = EMPTY_STATE
-    rounds = round(Int, 1024*4^size / 200)
+function throughput(::typeof(keccak_p1600), size, ::Val{N}) where {N}
+    state = if N == 1
+        ntuple(_ -> zero(UInt64), 25)
+    else
+        ntuple(_ -> ntuple(_ -> zero(UInt64), Val{N}()), 25)
+    end
+    rounds = round(Int, 1024*4^size / 200 / N)
     start = time()
     for _ in 1:rounds
         state = keccak_p1600(state)
@@ -29,11 +44,31 @@ function throughput(::typeof(keccak_p1600), size)
     println(" Keccak-p[1600,12] throughput: ~$(round(Int, 1024*4^size / (stop - start) / 1024^2)) MiB/s")
 end
 
-throughput(::typeof(turboshake), size) =
-    throughput(UInt64, m -> turboshake(UInt128, m), size, "TurboSHAKE-128")
+throughput(::typeof(keccak_p1600), size; simd::Int=1) =
+    if simd == 1 throughput(keccak_p1600, size, Val{1}())
+    else throughput(keccak_p1600, size, Val{simd}()) end
+
+throughput(::typeof(turboshake), size; simd::Int=1) =
+    throughput(UInt64, m -> turboshake(UInt128, m), size, "TurboSHAKE-128"; simd)
 
 throughput(::typeof(k12_singlethreaded), size) =
     throughput(UInt64, k12_singlethreaded, size, "KangarooTwelve (singlethreaded)")
+
+function throughput(::Val{:trunk_ingest}, ::Type{U}, size) where {U <: Unsigned}
+    function trunk_u(vals::Vector{U})
+        trunk = Trunk()
+        for val in vals
+            trunk = ingest(trunk, val)
+        end
+        trunk
+    end
+    throughput(U, trunk_u, size, "Trunk $U ingestion")
+end
+
+throughput(::Val{:trunk_u8}, size)  = throughput(Val{:trunk_ingest}(), UInt8, size)
+throughput(::Val{:trunk_u16}, size) = throughput(Val{:trunk_ingest}(), UInt16, size)
+throughput(::Val{:trunk_u32}, size) = throughput(Val{:trunk_ingest}(), UInt32, size)
+throughput(::Val{:trunk_u64}, size) = throughput(Val{:trunk_ingest}(), UInt64, size)
 
 function throughput(::Val{:crc32c}, size)
     CRC32c_pkg = Base.PkgId(Base.UUID("8bf52ea8-c179-5cab-976a-9e18b702a9bc"), "CRC32c")
@@ -104,7 +139,7 @@ Algorithms:
 | 11 | 4 GiB   |
 | ...  |         |
 """
-function throughput(alg::Symbol, size=9) # 4 = 1KiB, 6 = 32KiB, 8 = 1MiB...
+function throughput(alg::Symbol, size=9; simd::Int=1) # 4 = 1KiB, 6 = 32KiB, 8 = 1MiB...
     func = if alg == :keccak
         keccak_p1600
     elseif alg == :turboshake
@@ -113,6 +148,8 @@ function throughput(alg::Symbol, size=9) # 4 = 1KiB, 6 = 32KiB, 8 = 1MiB...
         k12_singlethreaded
     elseif alg == :k12
         k12
+    elseif alg ∈ (:trunk_u8, :trunk_u16, :trunk_u32, :trunk_u64)
+        Val{alg}()
     elseif alg ∈ (:crc32, :crc32c)
         Val{:crc32c}()
     elseif alg ∈ (:sha1, :sha256, :sha3_256)
@@ -122,5 +159,9 @@ function throughput(alg::Symbol, size=9) # 4 = 1KiB, 6 = 32KiB, 8 = 1MiB...
     else
         error("I don't know that alg of the k12 algorithm.")
     end
-    throughput(func, size)
+    if simd == 1
+        throughput(func, size)
+    else
+        throughput(func, size; simd)
+    end
 end

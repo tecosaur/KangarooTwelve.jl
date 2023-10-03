@@ -1,11 +1,13 @@
 module KangarooTwelve
-# using SIMD
+using SIMD
 
 # See <https://www.fress.io/story/k12>
 # For SIMD oppotunities, see <https://docs.rs/keccak/latest/src/keccak/lib.rs.html>.
 # With native code, <https://lists.gnupg.org/pipermail/gcrypt-devel/2022-July/005360.html>
 # and <https://github.com/XKCP/XKCP/blob/master/lib/low/KeccakP-1600/AVX2/KeccakP-1600-AVX2.s>
 # for some hints as to what good assembly should look like.
+#
+# The performance should be similar to <https://keccak.team/sw_performance.html>
 
 import Base.Cartesian.@ntuple
 
@@ -43,22 +45,19 @@ Apply the Keccak-p[`nrounds`, 1600] permutation to `state`. This is formally
 defined in [the Keccak reference](https://keccak.team/files/Keccak-reference-3.0.pdf)
  and formalised in [FIPS 202](https://csrc.nist.gov/pubs/fips/202/final).
 """
-function keccak_p1600(state::NTuple{25, UInt64}, ::Val{nrounds}=Val{12}()) where {nrounds}
-    rol64(a, n) = (a << n) | (a >> (64 - n))
-    # ~90ns (NB: the in-round times don't quite add up to this,
-    # so they're not quite right, but they should still be a useful
-    # indication)
+function keccak_p1600(state::NTuple{25, <:Union{UInt64, <:Vec{<:Any, UInt64}}}, ::Val{nrounds}=Val{12}()) where {nrounds}
+    @inline rol64(a, n) = (a << n) | (a >> (64 - n))
     @inbounds for round in (25 - nrounds):24
         # θ (diffusion)
-        C = @ntuple 5 i -> reduce(⊻, @ntuple 5 k -> state[i+5*(k-1)]) # ~12ns
-        D = @ntuple 5 i -> C[mod1(i+4, 5)] ⊻ rol64(C[mod1(i+1, 5)], 1) # ~20ns
-        state = @ntuple 25 i -> state[i] ⊻ D[mod1(i, 5)] # ~7ns
+        C = @ntuple 5 i -> reduce(⊻, @ntuple 5 k -> state[i+5*(k-1)])
+        D = @ntuple 5 i -> C[mod1(i+4, 5)] ⊻ rol64(C[mod1(i+1, 5)], 1)
+        state = @ntuple 25 i -> state[i] ⊻ D[mod1(i, 5)]
         # ρ (rotation) and π (lane permutation)
-        state = @ntuple 25 i -> rol64(state[πs[i]], ρs[i]) # ~6ns
+        state = @ntuple 25 i -> rol64(state[πs[i]], ρs[i])
         # χ (intra-row bitwise combination, nonlinear)
-        state = @ntuple 25 i -> state[i] ⊻ (~state[χs[i][1]] & state[χs[i][2]]) # ~10ns
+        state = @ntuple 25 i -> state[i] ⊻ (~state[χs[i][1]] & state[χs[i][2]])
         # ι (symmetry disruptor)
-        state = Base.setindex(state, state[1] ⊻ ROUND_CONSTS_24[round], 1) # ~3ns
+        state = Base.setindex(state, state[1] ⊻ ROUND_CONSTS_24[round], 1)
     end
     state
 end
@@ -116,6 +115,25 @@ function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVec
     state
 end
 
+# Unfortunately we do have to write a second SIMD-capable version since the
+# block construction is a little different to the linear version.
+function ingest(state::NTuple{25, Vec{N, UInt64}}, ::Val{capacity}, messages::NTuple{N, <:AbstractVector{UInt64}}) where {N, capacity}
+    rate = 25 - capacity ÷ 64
+    msglengths = map(length, messages)
+    for pos in 1:rate:maximum(msglengths)
+        state = if all(>=(pos+rate), msglengths)
+            @ntuple 25 i -> if i <= rate
+                state[i] ⊻ Vec{N, UInt64}(ntuple(k -> messages[k][pos+i], Val{N}()))
+            else state[i] end
+        else
+            @ntuple 25 i -> if i <= rate
+                state[i] ⊻ Vec{N, UInt64}(ntuple(k -> get(messages[k], pos+i, zero(UInt64)), Val{N}()))
+            else state[i] end
+        end |> keccak_p1600
+    end
+    state
+end
+
 # 5% overhead compared to a UInt64 message
 function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVector{U}) where {capacity, U<:Union{UInt32,UInt16,UInt8}}
     rate = 200 ÷ sizeof(U) - capacity ÷ (8 * sizeof(U))
@@ -150,6 +168,10 @@ pad(trunk::Trunk{rate}, delimsuffix) where {rate} =
     Trunk(pad(trunk.state, Val{(25 - rate) * 64}(),
               trunk.byte, delimsuffix), trunk.byte)
 
+# For SIMD results
+pad(states::NTuple{25, Vec{N, UInt64}}, capacity, lastbyte::NTuple{N, Int64}, delimsuffix::UInt8) where {N} =
+    ntuple(i -> pad(ntuple(k -> states[k][i], Val{25}()), capacity, lastbyte[i], delimsuffix), Val{N}())
+
 """
     squeeze(outtype::Type, state::NTuple{25, UInt64}, ::Val{capacity}=Val{CAPACITY}())
 
@@ -180,6 +202,15 @@ end
 squeeze(::Type{U}, state::NTuple{25, UInt64}, capacity::Val=Val{CAPACITY}()) where {U <: Unsigned} =
     squeeze(NTuple{1, U}, state, capacity) |> first
 
+# For SIMD results
+squeeze(U::Type, states::NTuple{N, NTuple{25, UInt64}}, capacity::Val=Val{CAPACITY}()) where {N} =
+    ntuple(i -> squeeze(U, states[i], capacity), Val{N}())
+squeeze(U::Type, states::NTuple{25, Vec{N, UInt64}}, capacity::Val=Val{CAPACITY}()) where {N} =
+    squeeze(U, unwrap_simd(states), capacity)
+
+unwrap_simd(vals::NTuple{V, Vec{N, T}}) where {V, N, T} =
+    ntuple(n -> ntuple(v -> vals[v][n], Val{V}()), Val{N}())
+
 # `squeeze!` isn't actually called anywhere, but it seems nice to have for completeness.
 """
     squeeze!(output::Vector{UInt64}, state::NTuple{25, UInt64}, ::Val{capacity}=Val{CAPACITY}())
@@ -207,6 +238,19 @@ function turboshake(output::Type, # <:Unsigned or NTuple{n, <:Unsigned}
                     delimsuffix::UInt8=0x80, ::Val{capacity} = Val{CAPACITY}()) where {capacity}
     state = ingest(EMPTY_STATE, Val{capacity}(), message)
     lastindex = mod1(length(message) * sizeof(eltype(message)) + 1, (1600 - capacity) ÷ 8)
+    state = pad(state, Val{capacity}(), lastindex, delimsuffix)
+    squeeze(output, state, Val{capacity}())
+end
+
+# SIMD version
+function turboshake(output::Type, # <:Unsigned or NTuple{n, <:Unsigned}
+                    message::NTuple{N, <:AbstractVector{<:Union{UInt64, UInt32, UInt16, UInt8}}},
+                    delimsuffix::UInt8=0x80, ::Val{capacity} = Val{CAPACITY}()) where {N, capacity}
+    empty_state = ntuple(_ -> Vec(ntuple(_ -> zero(UInt64), Val{N}())), Val{25}())
+    state = ingest(empty_state, Val{capacity}(), message)
+    # This `lastindex` expression allocates. Why!?
+    # lastindex = ntuple(i -> (length(message[i]) * sizeof(eltype(message[i])) + 1) % (200 - capacity ÷ 8) + 1, Val{N}())
+    lastindex = ntuple(i -> (N % i) % (200 - capacity ÷ 8) + 1, Val{N}())
     state = pad(state, Val{capacity}(), lastindex, delimsuffix)
     squeeze(output, state, Val{capacity}())
 end
