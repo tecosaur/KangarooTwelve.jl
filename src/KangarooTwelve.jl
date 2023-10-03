@@ -65,20 +65,34 @@ end
 
 ## TurboSHAKE
 
+const CAPACITY = 256
+
+struct Trunk{rate}
+    state::NTuple{25, UInt64}
+    byte::Int # index
+end
+
+Trunk{rate}() where {rate} = Trunk{rate}(EMPTY_STATE, 1)
+Trunk() = Trunk{25 - CAPACITY ÷ 64}()
+
 """
     ingest(state::NTuple{25, UInt64}, block::NTuple{rate, UInt64})
+    ingest(trunk::Trunk{rate}, block::NTuple{rate, UInt64})
 
-Ingest a single `block` of input (with implied `rate`) into `state`.
+Ingest a single `block` of input (with implied `rate`) into `state` or `trunk`.
 
-The first `rate` elements of `state` are `xor`'d `block`, and then the
-state is permuted with `keccak_p1600`.
+The first `rate` elements of the state are `xor`'d `block`, and then the state
+is permuted with `keccak_p1600`.
 """
 function ingest(state::NTuple{25, UInt64}, block::NTuple{rate, UInt64}) where {rate}
     state = @ntuple 25 i -> if i <= rate
         state[i] ⊻ block[i]
     else state[i] end
-    keccak_p1600(state), 1
+    keccak_p1600(state)
 end
+
+ingest(trunk::Trunk{rate}, block::NTuple{rate, UInt64}) where {rate} =
+    Trunk{rate}(ingest(trunk.state, block), 1)
 
 """
     ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVector{<:Unsigned})
@@ -96,10 +110,10 @@ function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVec
                 state[i] ⊻ block[i]
             else state[i] end
         else
-            @ntuple 25 i -> state[i] ⊻ get(block, i, zero(UInt64))
+            return @ntuple 25 i -> state[i] ⊻ get(block, i, zero(UInt64))
         end |> keccak_p1600
     end
-    state, mod1(1+length(message), rate)
+    state
 end
 
 # 5% overhead compared to a UInt64 message
@@ -110,25 +124,31 @@ function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVec
         state = if length(block) == rate
             @ntuple 25 i -> if i <= rate÷ratio
                 state[i] ⊻ reduce(+, ntuple(
-                    k -> UInt64(block[ratio*(i-1)+k]) << (8*sizeof(U)*(k-1)),
+                    k -> UInt64(hton(block[ratio*(i-1)+k])) << (8*sizeof(U)*(k-1)),
                     Val{ratio}()))
             else state[i] end
         else
-            @ntuple 25 i ->
+            return @ntuple 25 i ->
                 state[i] ⊻ reduce(+, ntuple(
-                    k -> UInt64(get(block, ratio*(i-1)+k, zero(U))) << (8*sizeof(U)*(k-1)),
+                    k -> UInt64(hton(get(block, ratio*(i-1)+k, zero(U)))) << (8*sizeof(U)*(k-1)),
                     Val{ratio}()))
         end |> keccak_p1600
     end
-    state, fld1(mod1(1+length(message), rate), sizeof(U))
+    state
 end
 
-function pad(state::NTuple{25, UInt64}, ::Val{capacity}, finalblk::Int, delimsuffix::UInt8) where {capacity}
+function pad(state::NTuple{25, UInt64}, ::Val{capacity}, lastbyte::Int, delimsuffix::UInt8) where {capacity}
     rate = 25 - capacity ÷ 64
-    state = Base.setindex(state, state[finalblk] ⊻ UInt64(delimsuffix), finalblk)
+    last_uint64 = fld1(lastbyte, sizeof(UInt64))
+    padbyte = state[last_uint64] ⊻ hton(UInt64(delimsuffix) << (8 * (7 - (lastbyte-1) % 8)))
+    state = Base.setindex(state, padbyte, last_uint64)
     state = Base.setindex(state, state[rate] ⊻ UInt64(0x80) << 56, rate)
     keccak_p1600(state)
 end
+
+pad(trunk::Trunk{rate}, delimsuffix) where {rate} =
+    Trunk(pad(trunk.state, Val{(25 - rate) * 64}(),
+              trunk.byte, delimsuffix), trunk.byte)
 
 """
     squeeze(outtype::Type, state::NTuple{25, UInt64}, ::Val{capacity}=Val{CAPACITY}())
@@ -160,6 +180,7 @@ end
 squeeze(::Type{U}, state::NTuple{25, UInt64}, capacity::Val=Val{CAPACITY}()) where {U <: Unsigned} =
     squeeze(NTuple{1, U}, state, capacity) |> first
 
+# `squeeze!` isn't actually called anywhere, but it seems nice to have for completeness.
 """
     squeeze!(output::Vector{UInt64}, state::NTuple{25, UInt64}, ::Val{capacity}=Val{CAPACITY}())
 
@@ -183,26 +204,18 @@ end
 
 function turboshake(output::Type, # <:Unsigned or NTuple{n, <:Unsigned}
                     message::AbstractVector{<:Union{UInt64, UInt32, UInt16, UInt8}},
-                    delimsuffix::UInt8=0x80, capacity::Val = Val{CAPACITY}())
-    state, finalblk = ingest(EMPTY_STATE, capacity, message)
-    state = pad(state, capacity, finalblk, delimsuffix)
-    squeeze(output, state, capacity)
+                    delimsuffix::UInt8=0x80, ::Val{capacity} = Val{CAPACITY}()) where {capacity}
+    state = ingest(EMPTY_STATE, Val{capacity}(), message)
+    lastindex = mod1(length(message) * sizeof(eltype(message)) + 1, (1600 - capacity) ÷ 8)
+    state = pad(state, Val{capacity}(), lastindex, delimsuffix)
+    squeeze(output, state, Val{capacity}())
 end
 
-# ## KangarooTwelve
+## KangarooTwelve
 
 const BLOCK_SIZE = 8192
-const CAPACITY = 256
 
 const K12_SUFFIXES = (one=0x07, many=0x06, leaf=0x0b)
-
-struct Trunk{rate}
-    state::NTuple{25, UInt64}
-    byte::Int # index
-end
-
-Trunk{rate}() where {rate} = Trunk{rate}(EMPTY_STATE, 1)
-Trunk() = Trunk{25 - CAPACITY ÷ 64}()
 
 """
     subxor(larger::Ubig, smaller::Usmall, byte::Int=1)
