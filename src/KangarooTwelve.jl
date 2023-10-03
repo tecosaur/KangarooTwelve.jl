@@ -369,8 +369,18 @@ function k12_singlethreaded(message::AbstractVector{U}) where {U <: Union{UInt64
     end
     trunk = ingest(trunk, 0xc000000000000000)
     n, rest = 0, view(message, BLOCK_SIZE÷sizeof(U)+1:length(message))
-    for block in Iterators.partition(rest, BLOCK_SIZE÷sizeof(U))
-        trunk, n = ingest(trunk, block), n+1
+    for block in Iterators.partition(rest, 4 * BLOCK_SIZE÷sizeof(U))
+        if length(block) == 4 * BLOCK_SIZE÷sizeof(U)
+            block_u64 = reinterpret(UInt64, block)
+            blocks = ntuple(i -> view(
+                block_u64, ((i-1) * BLOCK_SIZE÷sizeof(UInt64) + 1): (i * BLOCK_SIZE÷sizeof(UInt64))),
+                            4)
+            out_4u32 = turboshake(UInt32, blocks, K12_SUFFIXES.leaf)
+            out1u64, out2u64 = reinterpret(NTuple{2, UInt64}, out_4u32)
+            trunk, n = ingest(trunk, out1u64, out2u64), n+4
+        else
+            trunk, n = ingest(trunk, block), n+1
+        end
     end
     trunk = ingest(ingest_length(trunk, n), 0xffff, 0x01)
     state = trunk.state
