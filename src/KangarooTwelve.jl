@@ -367,13 +367,11 @@ function k12_singlethreaded(message::AbstractVector{U}) where {U <: Union{UInt64
     if length(message) <= BLOCK_SIZE÷sizeof(U)
         return turboshake(UInt128, message, K12_SUFFIXES.one)
     end
+    # Process the S₀ block
     rate = 25 - CAPACITY ÷ 64
-    trunk = Trunk{rate}()
-    # REVIEW is this a good way to initially ingest?
-    for i in 1:BLOCK_SIZE÷sizeof(U)
-        trunk = ingest(trunk, message[i])
-    end
-    trunk = ingest(trunk, 0xc000000000000000)
+    state0 = ingest(EMPTY_STATE, Val(CAPACITY), reinterpret(UInt64, view(message, 1:BLOCK_SIZE÷sizeof(U))))
+    trunk = Trunk{rate}(state0, 1 + BLOCK_SIZE % (8 * rate))
+    trunk = ingest(trunk, K12_ZEROBLOCK_SUFFIX)
     n, rest = 0, view(message, BLOCK_SIZE÷sizeof(U)+1:length(message))
     for block in Iterators.partition(rest, 4 * BLOCK_SIZE÷sizeof(U))
         if length(block) == 4 * BLOCK_SIZE÷sizeof(U)
