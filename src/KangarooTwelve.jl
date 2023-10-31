@@ -361,6 +361,8 @@ end
 
 ingest(trunk::Trunk, x, xs...) = ingest(ingest(trunk, x), xs...)
 
+const K12_ZEROBLOCK_SUFFIX = 0xc000000000000000
+
 function k12_singlethreaded(message::AbstractVector{U}) where {U <: Union{UInt64, UInt32, UInt16, UInt8}}
     if length(message) <= BLOCK_SIZE÷sizeof(U)
         return turboshake(UInt128, message, K12_SUFFIXES.one)
@@ -415,8 +417,9 @@ function k12_singlethreaded(io::IO)
     for i in 1:BLOCK_SIZE÷sizeof(UInt8)
         trunk = ingest(trunk, block[i])
     end
-    trunk = ingest(trunk, 0xc000000000000000)
+    trunk = ingest(trunk, K12_ZEROBLOCK_SUFFIX)
     n = 0
+    bigblock = Vector{UInt8}(undef, 4 * BLOCK_SIZE)
     while readbytes!(io, block) > 0
         trunk, n = ingest(trunk, block), n+1
     end
