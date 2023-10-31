@@ -1,6 +1,7 @@
 module KangarooTwelve
 using Base.Threads
 using SIMD
+using Mmap
 
 # See <https://www.fress.io/story/k12>
 # For SIMD oppotunities, see <https://docs.rs/keccak/latest/src/keccak/lib.rs.html>.
@@ -9,6 +10,8 @@ using SIMD
 # for some hints as to what good assembly should look like.
 #
 # The performance should be similar to <https://keccak.team/sw_performance.html>
+
+export k12
 
 import Base.Cartesian.@ntuple
 
@@ -428,6 +431,7 @@ function k12_singlethreaded(io::IO)
 end
 
 """
+    k12(data::Union{IO, String, AbstractVector{Unsigned}}) -> UInt128
 
 Hash `data` with the KangarooTwelve scheme.
 
@@ -457,7 +461,25 @@ SIMD and multithreading. To ensure sufficient data to produce 128 bits of
 entropy from a small number of blocks (each producing a `UInt32` CV), ``S₀`` is
 included in full.
 """
-const k12 = k12_singlethreaded
+function k12(data::AbstractVector{<:Unsigned})
+    if true # length(data) < heuristic
+        k12_singlethreaded(data)
+    else
+        k12_multithreaded(data)
+    end
+end
+
+function k12(data::IO)
+    try
+        buf = Mmap.mmap(data)
+        k12(data)
+    catch _
+        k12_multithreaded(data)
+    end
+end
+
+k12(s::String) = k12(codeunits(s))
+k12(s::AbstractString) = k12(String(s))
 
 include("throughput.jl")
 
