@@ -119,4 +119,17 @@ bitpattern(num::Int) =
     @test_broken turboshake(UInt128, bitpattern(11^4), 0x2a, Val(8))   == 0x4d30b26a92e48740078cfb89b5b84ba8
     @test_broken turboshake(UInt128, bitpattern(11^4), 0x22, Val(56))  == 0x4f327ae0a6f76feffd731d4a42658ff6
     @test_broken turboshake(UInt128, bitpattern(11^4), 0x7e, Val(520)) == 0x0b8f6a9f36e874d486a385f5f61243bc
- end
+end
+
+@testset "Turboshake SIMD" begin
+    # As before, just now x4
+    x4(x) = (x, x, x, x)
+    bitpattern64(n) = reinterpret(UInt64, bitpattern(8 * n))
+    @test turboshake(UInt128, x4(UInt64[]),           0x01, Val(256)) == x4(turboshake(UInt128, UInt64[],           0x01, Val(256)))
+    @test turboshake(UInt128, x4(bitpattern64(15)),   0x01, Val(256)) == x4(turboshake(UInt128, bitpattern64(15),   0x01, Val(256)))
+    @test turboshake(UInt128, x4(bitpattern64(15^2)), 0x01, Val(256)) == x4(turboshake(UInt128, bitpattern64(15^2), 0x01, Val(256)))
+    @test turboshake(UInt128, x4(bitpattern64(15^3)), 0x01, Val(256)) == x4(turboshake(UInt128, bitpattern64(15^3), 0x01, Val(256)))
+    @test turboshake(UInt128, x4(bitpattern64(15^4)), 0x01, Val(256)) == x4(turboshake(UInt128, bitpattern64(15^4), 0x01, Val(256)))
+    @test turboshake(UInt128, x4(bitpattern64(15^5)), 0x01, Val(256)) == x4(turboshake(UInt128, bitpattern64(15^5), 0x01, Val(256)))
+    @test turboshake(UInt128, x4(bitpattern64(15^6)), 0x01, Val(256)) == x4(turboshake(UInt128, bitpattern64(15^6), 0x01, Val(256)))
+end

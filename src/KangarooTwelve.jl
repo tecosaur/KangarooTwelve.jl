@@ -50,14 +50,15 @@ defined in [the Keccak reference](https://keccak.team/files/Keccak-reference-3.0
  and formalised in [FIPS 202](https://csrc.nist.gov/pubs/fips/202/final).
 """
 function keccak_p1600(state::NTuple{25, <:Union{UInt64, <:Vec{<:Any, UInt64}}}, ::Val{nrounds}=Val{12}()) where {nrounds}
-    @inline rol64(a, n) = (a << n) | (a >> (64 - n))
+    # Inlining `roll64` makes this faster with SIMD, but also non-deterministic 😢
+    rol64(a, n) = (a << n) | (a >> (64 - n))
     @inbounds for round in (25 - nrounds):24
         # θ (diffusion)
         C = @ntuple 5 i -> reduce(⊻, @ntuple 5 k -> state[i+5*(k-1)])
         D = @ntuple 5 i -> C[mod1(i+4, 5)] ⊻ rol64(C[mod1(i+1, 5)], 1)
         state = @ntuple 25 i -> state[i] ⊻ D[mod1(i, 5)]
         # ρ (rotation) and π (lane permutation)
-        state = @ntuple 25 i -> rol64(state[πs[i]], ρs[i])
+        state = @ntuple 25 i -> rol64(state[πs[i]], ρs[i]) # the `rol64` SIMD issue occurs here
         # χ (intra-row bitwise combination, nonlinear)
         state = @ntuple 25 i -> state[i] ⊻ (~state[χs[i][1]] & state[χs[i][2]])
         # ι (symmetry disruptor)
@@ -127,11 +128,11 @@ function ingest(state::NTuple{25, Vec{N, UInt64}}, ::Val{capacity}, messages::NT
     for pos in 1:rate:maximum(msglengths)
         state = if all(>=(pos+rate), msglengths)
             @ntuple 25 i -> if i <= rate
-                state[i] ⊻ Vec{N, UInt64}(ntuple(k -> messages[k][pos+i], Val{N}()))
+                state[i] ⊻ Vec{N, UInt64}(ntuple(k -> messages[k][pos-1+i], Val{N}()))
             else state[i] end
         else
-            @ntuple 25 i -> if i <= rate
-                state[i] ⊻ Vec{N, UInt64}(ntuple(k -> get(messages[k], pos+i, zero(UInt64)), Val{N}()))
+            return @ntuple 25 i -> if i <= rate
+                state[i] ⊻ Vec{N, UInt64}(ntuple(k -> get(messages[k], pos-1+i, zero(UInt64)), Val{N}()))
             else state[i] end
         end |> keccak_p1600
     end
@@ -255,8 +256,7 @@ function turboshake(output::Type, # <:Unsigned or NTuple{n, <:Unsigned}
     empty_state = ntuple(_ -> Vec(ntuple(_ -> zero(UInt64), Val{N}())), Val{25}())
     state = ingest(empty_state, Val{capacity}(), message)
     # This `lastindex` expression allocates. Why!?
-    # lastindex = ntuple(i -> (length(message[i]) * sizeof(eltype(message[i])) + 1) % (200 - capacity ÷ 8) + 1, Val{N}())
-    lastindex = ntuple(i -> (N % i) % (200 - capacity ÷ 8) + 1, Val{N}())
+    lastindex = ntuple(i -> (length(message[i]) * sizeof(eltype(message[i]))) % (200 - capacity ÷ 8) + 1, Val{N}())
     state = pad(state, Val{capacity}(), lastindex, delimsuffix)
     squeeze(output, state, Val{capacity}())
 end
