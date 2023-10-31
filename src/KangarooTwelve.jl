@@ -1,4 +1,5 @@
 module KangarooTwelve
+using Base.Threads
 using SIMD
 
 # See <https://www.fress.io/story/k12>
@@ -392,6 +393,15 @@ function k12_singlethreaded(message::AbstractVector{U}) where {U <: Union{UInt64
     squeeze(UInt128, state, Val{CAPACITY}())
 end
 
+# TODO: Better multithreaded implementation + heuristic
+function k12_multithreaded(message::AbstractVector{U}) where {U <: Union{UInt64, UInt32, UInt16, UInt8}}
+    chunks = Iterators.partition(message, 4 * BLOCK_SIZE÷sizeof(U))
+    tasks = map(chunks) do chunk
+        @spawn turboshake(UInt32, chunk, K12_SUFFIXES.leaf)
+    end
+    map(fetch, tasks)
+end
+
 function k12_singlethreaded(io::IO)
     block = Vector{UInt8}(undef, BLOCK_SIZE)
     if (size = readbytes!(io, block)) < BLOCK_SIZE
@@ -417,9 +427,7 @@ function k12_singlethreaded(io::IO)
     squeeze(UInt128, state, Val{CAPACITY}())
 end
 
-# TODO: Multithreaded implementation + heuristic
 """
-    k12(data::Union{IO, AbstractVector{Unsigned}}) -> UInt128
 
 Hash `data` with the KangarooTwelve scheme.
 
