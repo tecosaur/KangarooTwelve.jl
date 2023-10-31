@@ -146,13 +146,13 @@ function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVec
         state = if length(block) == rate
             @ntuple 25 i -> if i <= rate÷ratio
                 state[i] ⊻ reduce(+, ntuple(
-                    k -> UInt64(hton(block[ratio*(i-1)+k])) << (8*sizeof(U)*(k-1)),
+                    k -> (hton(block[ratio*(i-1)+k]) % UInt64) << (8*sizeof(U)*(k-1)),
                     Val{ratio}()))
             else state[i] end
         else
             return @ntuple 25 i ->
                 state[i] ⊻ reduce(+, ntuple(
-                    k -> UInt64(hton(get(block, ratio*(i-1)+k, zero(U)))) << (8*sizeof(U)*(k-1)),
+                    k -> (hton(get(block, ratio*(i-1)+k, zero(U))) % UInt64) << (8*sizeof(U)*(k-1)),
                     Val{ratio}()))
         end |> keccak_p1600
     end
@@ -162,9 +162,9 @@ end
 function pad(state::NTuple{25, UInt64}, ::Val{capacity}, lastbyte::Int, delimsuffix::UInt8) where {capacity}
     rate = 25 - capacity ÷ 64
     last_uint64 = fld1(lastbyte, sizeof(UInt64))
-    padbyte = state[last_uint64] ⊻ hton(UInt64(delimsuffix) << (8 * (7 - (lastbyte-1) % 8)))
+    padbyte = state[last_uint64] ⊻ hton((delimsuffix % UInt64) << (8 * (7 - (lastbyte-1) % 8)))
     state = Base.setindex(state, padbyte, last_uint64)
-    state = Base.setindex(state, state[rate] ⊻ UInt64(0x80) << 56, rate)
+    state = Base.setindex(state, state[rate] ⊻ (0x80 % UInt64) << 56, rate)
     keccak_p1600(state)
 end
 
@@ -279,7 +279,7 @@ function subxor(larger::Ubig, smaller::Usmall, byte::Int=1) where {Ubig <: Unsig
     # REVIEW should `htol` need to be used here?
     Ubig == Usmall && return larger ⊻ smaller
     shift = 8 * (sizeof(Ubig) - byte - sizeof(Usmall) + 1)
-    value = Ubig(smaller) << shift
+    value = (smaller % Ubig) << shift
     larger ⊻ value
 end
 
@@ -296,8 +296,8 @@ function subxor(larger::NTuple{size, Ubig}, smaller::Usmall, byte::Int=1) where 
         # We can't actually use `subxor(::Ubig, ::Usmall, byte)` as
         # we run into the potential of needing a UInt48 etc.
         shift = 8 * ((byte + sizeof(Usmall)-1) % sizeof(Ubig))
-        value1 = Ubig(smaller) >> shift
-        value2 = Ubig(smaller) << (8*sizeof(Ubig) - shift)
+        value1 = (smaller % Ubig) >> shift
+        value2 = (smaller % Ubig) << (8*sizeof(Ubig) - shift)
         larger = Base.setindex(larger, larger[largeindex] ⊻ value1, largeindex)
         Base.setindex(larger, larger[largeindex+1] ⊻ value2, largeindex+1)
     end
