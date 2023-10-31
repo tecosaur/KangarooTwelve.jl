@@ -146,13 +146,13 @@ function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVec
         state = if length(block) == rate
             @ntuple 25 i -> if i <= rate÷ratio
                 state[i] ⊻ reduce(+, ntuple(
-                    k -> (hton(block[ratio*(i-1)+k]) % UInt64) << (8*sizeof(U)*(k-1)),
+                    k -> (block[ratio*(i-1)+k] % UInt64) << (8*sizeof(U)*(k-1)),
                     Val{ratio}()))
             else state[i] end
         else
             return @ntuple 25 i ->
                 state[i] ⊻ reduce(+, ntuple(
-                    k -> (hton(get(block, ratio*(i-1)+k, zero(U))) % UInt64) << (8*sizeof(U)*(k-1)),
+                    k -> (get(block, ratio*(i-1)+k, zero(U)) % UInt64) << (8*sizeof(U)*(k-1)),
                     Val{ratio}()))
         end |> keccak_p1600
     end
@@ -276,9 +276,8 @@ xor `larger` with `smaller`, lining the start of `smaller` up with `byte` of
 needed.
 """
 function subxor(larger::Ubig, smaller::Usmall, byte::Int=1) where {Ubig <: Unsigned, Usmall <: Unsigned}
-    # REVIEW should `htol` need to be used here?
     Ubig == Usmall && return larger ⊻ smaller
-    shift = 8 * (sizeof(Ubig) - byte - sizeof(Usmall) + 1)
+    shift = 8 * (byte - 1)
     value = (smaller % Ubig) << shift
     larger ⊻ value
 end
@@ -287,7 +286,7 @@ function subxor(larger::NTuple{size, Ubig}, smaller::Usmall, byte::Int=1) where 
     @boundscheck byte + sizeof(Usmall)-1 <= sizeof(Ubig) * size ||
         throw(BoundsError(larger, fld1(byte + sizeof(Usmall)-1, sizeof(Ubig))))
     largeindex = fld1(byte, sizeof(Ubig))
-    if byte % sizeof(Ubig) == 1 || fld1(byte + sizeof(Usmall), sizeof(Ubig)) == largeindex
+    if byte % sizeof(Ubig) == 1 || fld1(byte + sizeof(Usmall)-1, sizeof(Ubig)) == largeindex
         Base.setindex(larger,
                       subxor(larger[largeindex], smaller, mod1(byte, sizeof(Ubig))),
                       largeindex)
@@ -295,9 +294,10 @@ function subxor(larger::NTuple{size, Ubig}, smaller::Usmall, byte::Int=1) where 
         # It doesn't fit, which means we'll need to split it up.
         # We can't actually use `subxor(::Ubig, ::Usmall, byte)` as
         # we run into the potential of needing a UInt48 etc.
-        shift = 8 * ((byte + sizeof(Usmall)-1) % sizeof(Ubig))
-        value1 = (smaller % Ubig) >> shift
-        value2 = (smaller % Ubig) << (8*sizeof(Ubig) - shift)
+        shift = 8 * ((byte - 1) % sizeof(Ubig))
+        overhang = 8 * (sizeof(Usmall) - (byte + sizeof(Usmall)-1) % sizeof(Ubig))
+        value1 = (smaller % Ubig) << shift
+        value2 = (smaller >> overhang) % Ubig
         larger = Base.setindex(larger, larger[largeindex] ⊻ value1, largeindex)
         Base.setindex(larger, larger[largeindex+1] ⊻ value2, largeindex+1)
     end
