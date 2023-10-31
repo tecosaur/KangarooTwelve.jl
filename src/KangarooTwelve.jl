@@ -419,10 +419,35 @@ end
 
 # TODO: Multithreaded implementation + heuristic
 """
-    k12(data::AbstractVector{<:Unsigned})
-    k12(data::IO)
+    k12(data::Union{IO, AbstractVector{Unsigned}}) -> UInt128
 
 Hash `data` with the KangarooTwelve scheme.
+
+This scheme presents a good balance of *Simplicity*, *Security*, and *Speed*.
+
+# Extended help
+
+The KangarooTwelve hashing scheme works by splitting the input data into ``n``
+$BLOCK_SIZE-byte blocks (``S₀``, ``S₁``, …, ``Sₙ₋₁``) which are individually
+hashed with [`TurboSHAKE128`](@ref turboshake) to produce "chaining
+values" (CVs), which are put together and ingested to produce the final state.
+
+```text
+               ╭────╮ ╭────╮   ╭────╮ ╭────╮
+               │ S₁ │ │ S₂ │   │Sₙ₋₂│ │Sₙ₋₁│
+               ╰─┬──╯ ╰─┬──╯   ╰─┬──╯ ╰─┬──╯
+                 │110   │110     │110   │110
+                 ▼      ▼        ▼      ▼
+╭────────╮110⁶²╭─┴──╮ ╭─┴──╮   ╭─┴──╮ ╭─┴──╮
+│   S₀   ├─────┤ CV ├─┤ CV ├╴╍╶┤ CV ├─┤ CV ├─(n-1)(FFFF)(01)──▶─┤HASH│
+╰────────╯     ╰────╯ ╰────╯   ╰────╯ ╰────╯
+```
+
+This scheme has been described as "leaves on a vine". The hashing of blocks
+``S₁`` to ``Sₙ₋₁`` is embarassingly parallel, and can be accelerated with both
+SIMD and multithreading. To ensure sufficient data to produce 128 bits of
+entropy from a small number of blocks (each producing a `UInt32` CV), ``S₀`` is
+included in full.
 """
 const k12 = k12_singlethreaded
 
