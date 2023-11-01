@@ -74,7 +74,7 @@ const CAPACITY = 256
 """
     ingest(state::NTuple{25, UInt64}, block::NTuple{rate, UInt64})
 
-Ingest a single `block` of input (with implied `rate`) into `state` or `trunk`.
+Ingest a single `block` of input (with implied `rate`) into `state` or `sponge`.
 
 The first `rate` elements of the state are `xor`'d `block`, and then the state
 is permuted with `keccak_p1600`.
@@ -245,44 +245,44 @@ function turboshake(output::Type, # <:Unsigned or NTuple{n, <:Unsigned}
     squeeze(output, state, Val{capacity}())
 end
 
-## Trunk
+## Sponge
 
-struct Trunk{rate}
+struct Sponge{rate}
     state::NTuple{25, UInt64}
     byte::Int # index
 end
 
-Trunk{rate}() where {rate} = Trunk{rate}(EMPTY_STATE, 1)
-Trunk() = Trunk{25 - CAPACITY ÷ 64}()
+Sponge{rate}() where {rate} = Sponge{rate}(EMPTY_STATE, 1)
+Sponge() = Sponge{25 - CAPACITY ÷ 64}()
 
-function Trunk{rate}(zeroblock::AbstractVector{U}) where {rate, U<:Unsigned}
+function Sponge{rate}(zeroblock::AbstractVector{U}) where {rate, U<:Unsigned}
     capacity = (25 - rate) * 64
-    trunk = if length(zeroblock) * sizeof(U) == BLOCK_SIZE
+    sponge = if length(zeroblock) * sizeof(U) == BLOCK_SIZE
         zerostate = ingest(EMPTY_STATE, Val{capacity}(), reinterpret(UInt64, zeroblock))
-        Trunk{rate}(zerostate, 1 + BLOCK_SIZE % (8 * rate))
+        Sponge{rate}(zerostate, 1 + BLOCK_SIZE % (8 * rate))
     else
         zerostate = ingest(EMPTY_STATE, Val{capacity}(), zeroblock)
-        Trunk{rate}(zerostate, 1 + (length(zeroblock) * sizeof(U)) % (8 * rate))
+        Sponge{rate}(zerostate, 1 + (length(zeroblock) * sizeof(U)) % (8 * rate))
     end
-    ingest(trunk, K12_ZEROBLOCK_SUFFIX)
+    ingest(sponge, K12_ZEROBLOCK_SUFFIX)
 end
 
-Trunk(zeroblock::AbstractVector{<:Unsigned}) =
-    Trunk{25 - CAPACITY ÷ 64}(zeroblock)
+Sponge(zeroblock::AbstractVector{<:Unsigned}) =
+    Sponge{25 - CAPACITY ÷ 64}(zeroblock)
 
-ingest(trunk::Trunk{rate}, block::NTuple{rate, UInt64}) where {rate} =
-    Trunk{rate}(ingest(trunk.state, block), 1)
+ingest(sponge::Sponge{rate}, block::NTuple{rate, UInt64}) where {rate} =
+    Sponge{rate}(ingest(sponge.state, block), 1)
 
-function pad(trunk::Trunk{rate}, delimsuffix::UInt8) where {rate}
-    (; state, byte) = trunk
+function pad(sponge::Sponge{rate}, delimsuffix::UInt8) where {rate}
+    (; state, byte) = sponge
     if byte != 1
         state = keccak_p1600(state)
     end
-    Trunk{rate}(pad(state, Val{(25 - rate) * 64}(), byte, delimsuffix), 1)
+    Sponge{rate}(pad(state, Val{(25 - rate) * 64}(), byte, delimsuffix), 1)
 end
 
-squeeze(T::Type, trunk::Trunk{rate}) where {rate} =
-    squeeze(T, trunk.state, Val{(25 - rate) * 64}())
+squeeze(T::Type, sponge::Sponge{rate}) where {rate} =
+    squeeze(T, sponge.state, Val{(25 - rate) * 64}())
 
 ## KangarooTwelve
 
@@ -327,40 +327,40 @@ function subxor(larger::NTuple{size, Ubig}, smaller::Usmall, byte::Int=1) where 
 end
 
 """
-    ingest(trunk::Trunk, entry::Unsigned)
+    ingest(sponge::Sponge, entry::Unsigned)
 
-Ingest a single `entry` into `trunk`. This updates the partial-block stored in
-`trunk`, and when full merges it with the `state` and runs a `keccak_p1600`
+Ingest a single `entry` into `sponge`. This updates the partial-block stored in
+`sponge`, and when full merges it with the `state` and runs a `keccak_p1600`
 round when full.
 """
-function ingest(trunk::Trunk{rate}, entry::U) where {rate, U <: Union{UInt64, UInt32, UInt16, UInt8}}
-    if trunk.byte <= 8 * rate - sizeof(U)+1 # Fits within `rate`
-        state = subxor(trunk.state, entry, trunk.byte)
-        nextbyte = trunk.byte + sizeof(U)
+function ingest(sponge::Sponge{rate}, entry::U) where {rate, U <: Union{UInt64, UInt32, UInt16, UInt8}}
+    if sponge.byte <= 8 * rate - sizeof(U)+1 # Fits within `rate`
+        state = subxor(sponge.state, entry, sponge.byte)
+        nextbyte = sponge.byte + sizeof(U)
         if nextbyte == 8 * rate + 1 # Rollover
-            Trunk{rate}(keccak_p1600(state), 1)
+            Sponge{rate}(keccak_p1600(state), 1)
         else
-            Trunk{rate}(state, nextbyte)
+            Sponge{rate}(state, nextbyte)
         end
     else # Wrap-around needed
-        state = trunk.state
+        state = sponge.state
         slast, sfirst = subxor(
-            (state[rate], zero(UInt64)), entry, mod1(trunk.byte, sizeof(UInt64)))
+            (state[rate], zero(UInt64)), entry, mod1(sponge.byte, sizeof(UInt64)))
         state = Base.setindex(state, slast, rate)
         state = keccak_p1600(state)
         state = Base.setindex(state, sfirst, 1)
-        Trunk{rate}(state, mod1(trunk.byte + sizeof(U), sizeof(UInt64)))
+        Sponge{rate}(state, mod1(sponge.byte + sizeof(U), sizeof(UInt64)))
     end
 end
 
 """
-    ingest(trunk::Trunk, block::AbstractVector{<:Unsigned})
+    ingest(sponge::Sponge, block::AbstractVector{<:Unsigned})
 
-Ingest `block` into `trunk`. This is done by applying `turboshake` to `block`,
-extracting a `UInt32`, and then ingesting that `UInt32` into `trunk`.
+Ingest `block` into `sponge`. This is done by applying `turboshake` to `block`,
+extracting a `UInt32`, and then ingesting that `UInt32` into `sponge`.
 """
-function ingest(trunk::Trunk, block::AbstractVector{U}) where {U <: Union{UInt64, UInt32, UInt16, UInt8}}
-    ingest(trunk, if U == UInt64
+function ingest(sponge::Sponge, block::AbstractVector{U}) where {U <: Union{UInt64, UInt32, UInt16, UInt8}}
+    ingest(sponge, if U == UInt64
         turboshake(UInt32, block, K12_SUFFIXES.leaf)
     elseif length(block) == BLOCK_SIZE ÷ sizeof(U)
         turboshake(UInt32, reinterpret(UInt64, block), K12_SUFFIXES.leaf)
@@ -369,7 +369,7 @@ function ingest(trunk::Trunk, block::AbstractVector{U}) where {U <: Union{UInt64
     end)
 end
 
-function ingest_length(trunk::Trunk, val::Int, ::Val{bufsize}=Val{8}()) where {bufsize}
+function ingest_length(sponge::Sponge, val::Int, ::Val{bufsize}=Val{8}()) where {bufsize}
     buffer = ntuple(_ -> 0x00, Val{bufsize}())
     point = 0
     while (val > 0)
@@ -377,12 +377,12 @@ function ingest_length(trunk::Trunk, val::Int, ::Val{bufsize}=Val{8}()) where {b
         val ÷= 2^8
     end
     for i in point:-1:1
-        trunk = ingest(trunk, buffer[i])
+        sponge = ingest(sponge, buffer[i])
     end
-    ingest(trunk, UInt8(point))
+    ingest(sponge, UInt8(point))
 end
 
-ingest(trunk::Trunk, x, xs...) = ingest(ingest(trunk, x), xs...)
+ingest(sponge::Sponge, x, xs...) = ingest(ingest(sponge, x), xs...)
 
 const K12_ZEROBLOCK_SUFFIX = 0xc000000000000000
 const SIMD_FACTOR = 4
@@ -391,15 +391,15 @@ function k12_singlethreaded_nosimd(message::AbstractVector{U}) where {U <: Union
     if length(message) <= BLOCK_SIZE÷sizeof(U)
         return turboshake(UInt128, message, K12_SUFFIXES.one)
     end
-    trunk = Trunk(view(message, 1:BLOCK_SIZE÷sizeof(U)))
+    sponge = Sponge(view(message, 1:BLOCK_SIZE÷sizeof(U)))
     n, rest = 0, view(message, BLOCK_SIZE÷sizeof(U)+1:length(message))
     for block in Iterators.partition(rest, BLOCK_SIZE÷sizeof(U))
         out32 = turboshake(UInt32, block, K12_SUFFIXES.leaf)
-        trunk, n = ingest(trunk, out32), n+1
+        sponge, n = ingest(sponge, out32), n+1
     end
-    trunk = ingest(ingest_length(trunk, n), 0xffff, 0x01)
-    trunk = pad(trunk, K12_SUFFIXES.many)
-    squeeze(UInt128, trunk)
+    sponge = ingest(ingest_length(sponge, n), 0xffff, 0x01)
+    sponge = pad(sponge, K12_SUFFIXES.many)
+    squeeze(UInt128, sponge)
 end
 
 const SIMD_BLOCKS = ntuple(i -> 1+(i-1)*BLOCK_SIZE÷sizeof(UInt64):i*BLOCK_SIZE÷sizeof(UInt64),
@@ -410,23 +410,23 @@ function k12_singlethreaded(message::AbstractVector{U}) where {U <: Union{UInt64
         return turboshake(UInt128, message, K12_SUFFIXES.one)
     end
     slices = slice_message(message, Val{SIMD_FACTOR}())
-    n, trunk = 0, Trunk(view(message, slices.init))
+    n, sponge = 0, Sponge(view(message, slices.init))
     for sblock in slices.simd
         sblock_u64 = reinterpret(UInt64, view(message, sblock))
         blocks = ntuple(i -> view(sblock_u64, SIMD_BLOCKS[i]), Val{SIMD_FACTOR}())
         out_4u32 = turboshake(UInt32, blocks, K12_SUFFIXES.leaf)
         out1u64, out2u64 = reinterpret(NTuple{2, UInt64}, out_4u32)
-        trunk, n = ingest(trunk, out1u64, out2u64), n + SIMD_FACTOR
+        sponge, n = ingest(sponge, out1u64, out2u64), n + SIMD_FACTOR
     end
     for block in slices.blocks
-        trunk, n = ingest(trunk, view(message, block)), n+1
+        sponge, n = ingest(sponge, view(message, block)), n+1
     end
     if !isempty(slices.tail)
-        trunk, n = ingest(trunk, view(message, slices.tail)), n+1
+        sponge, n = ingest(sponge, view(message, slices.tail)), n+1
     end
-    trunk = ingest(ingest_length(trunk, n), 0xffff, 0x01)
-    trunk = pad(trunk, K12_SUFFIXES.many)
-    squeeze(UInt128, trunk)
+    sponge = ingest(ingest_length(sponge, n), 0xffff, 0x01)
+    sponge = pad(sponge, K12_SUFFIXES.many)
+    squeeze(UInt128, sponge)
 end
 
 function slice_message((U, mlen)::Tuple{Type, Int}, ::Val{simd_factor}) where {simd_factor}
@@ -462,14 +462,14 @@ function k12_singlethreaded(io::IO)
     if (size = readbytes!(io, block)) < BLOCK_SIZE
         return k12_singlethreaded(view(block, 1:size))
     end
-    n, trunk = 0, Trunk(block)
+    n, sponge = 0, Sponge(block)
     while (size = readbytes!(io, block)) > 0
         out32 = turboshake(UInt32, view(block, 1:size), K12_SUFFIXES.leaf)
-        trunk, n = ingest(trunk, out32), n+1
+        sponge, n = ingest(sponge, out32), n+1
     end
-    trunk = ingest(ingest_length(trunk, n), 0xffff, 0x01)
-    trunk = pad(trunk, K12_SUFFIXES.many)
-    squeeze(UInt128, trunk)
+    sponge = ingest(ingest_length(sponge, n), 0xffff, 0x01)
+    sponge = pad(sponge, K12_SUFFIXES.many)
+    squeeze(UInt128, sponge)
 end
 
 """

@@ -2,7 +2,7 @@ using KangarooTwelve
 using Test
 
 import KangarooTwelve: keccak_p1600, ingest, pad, squeeze, turboshake,
-    Trunk, overwrite, ingest_length, k12_singlethreaded, k12
+    Sponge, overwrite, ingest_length, k12_singlethreaded, k12
 
 @testset "keccak" begin
     keccak_1600_init =
@@ -46,35 +46,35 @@ import KangarooTwelve: keccak_p1600, ingest, pad, squeeze, turboshake,
     @test keccak_p1600(keccak_1600_init, Val(24)) == keccak_1600_24rounds
 end
 
-@testset "Trunk ingestion" begin
-    trunk = ingest(Trunk(), 0x11)
-    rate = (((::Trunk{rate}) where {rate}) -> rate)(trunk)
-    @test trunk.state[1] == 0x0000000000000011
-    trunk = ingest(trunk, 0x2222)
-    @test trunk.state[1] == 0x0000000000222211
-    trunk = ingest(trunk, 0x33333333)
-    @test trunk.state[1] == 0x0033333333222211
-    trunk = ingest(trunk, 0x4444)
-    @test trunk.state[1] == 0x4433333333222211
-    @test trunk.state[2] == 0x0000000000000044
-    trunk = ingest(trunk, 0x5555555555555555)
-    @test trunk.state[2] == 0x5555555555555544
-    @test trunk.state[3] == 0x0000000000000055
-    trunk = ingest(trunk, 0x66, 0x6666, 0x66666666)
-    @test trunk.state[3] == 0x6666666666666655
-    @test trunk.state[4] == 0x0000000000000000
+@testset "Sponge ingestion" begin
+    sponge = ingest(Sponge(), 0x11)
+    rate = (((::Sponge{rate}) where {rate}) -> rate)(sponge)
+    @test sponge.state[1] == 0x0000000000000011
+    sponge = ingest(sponge, 0x2222)
+    @test sponge.state[1] == 0x0000000000222211
+    sponge = ingest(sponge, 0x33333333)
+    @test sponge.state[1] == 0x0033333333222211
+    sponge = ingest(sponge, 0x4444)
+    @test sponge.state[1] == 0x4433333333222211
+    @test sponge.state[2] == 0x0000000000000044
+    sponge = ingest(sponge, 0x5555555555555555)
+    @test sponge.state[2] == 0x5555555555555544
+    @test sponge.state[3] == 0x0000000000000055
+    sponge = ingest(sponge, 0x66, 0x6666, 0x66666666)
+    @test sponge.state[3] == 0x6666666666666655
+    @test sponge.state[4] == 0x0000000000000000
     for _ in 4:rate-1
-        trunk = ingest(trunk, 0x1234567812345678)
+        sponge = ingest(sponge, 0x1234567812345678)
     end
-    @test sum(trunk.state) == 0x3568ace824579ba2
-    @test ingest(trunk, 0x1111111111111111).state[1] == 0x070513f3bdbfaa6f
-    @test ingest(trunk, 0x22222222, 0x1111111111111111).state[1] == 0x0000000011111111
+    @test sum(sponge.state) == 0x3568ace824579ba2
+    @test ingest(sponge, 0x1111111111111111).state[1] == 0x070513f3bdbfaa6f
+    @test ingest(sponge, 0x22222222, 0x1111111111111111).state[1] == 0x0000000011111111
 end
 
 @testset "Length encoding" begin
-    @test ingest_length(Trunk(), 0).state[1] == 0x0000000000000000
-    @test ingest_length(Trunk(), 12).state[1] == 0x000000000000010c
-    @test ingest_length(Trunk(), 65538).state[1] == 0x0000000003020001
+    @test ingest_length(Sponge(), 0).state[1] == 0x0000000000000000
+    @test ingest_length(Sponge(), 12).state[1] == 0x000000000000010c
+    @test ingest_length(Sponge(), 65538).state[1] == 0x0000000003020001
 end
 
 bitpattern(num::Int) =
