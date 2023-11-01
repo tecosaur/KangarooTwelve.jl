@@ -391,7 +391,6 @@ function k12_singlethreaded_nosimd(message::AbstractVector{U}) where {U <: Union
     if length(message) <= BLOCK_SIZE÷sizeof(U)
         return turboshake(UInt128, message, K12_SUFFIXES.one)
     end
-    # Process the S₀ block
     trunk = Trunk(view(message, 1:BLOCK_SIZE÷sizeof(U)))
     n, rest = 0, view(message, BLOCK_SIZE÷sizeof(U)+1:length(message))
     for block in Iterators.partition(rest, BLOCK_SIZE÷sizeof(U))
@@ -403,34 +402,51 @@ function k12_singlethreaded_nosimd(message::AbstractVector{U}) where {U <: Union
     squeeze(UInt128, trunk)
 end
 
+const SIMD_BLOCKS = ntuple(i -> 1+(i-1)*BLOCK_SIZE÷sizeof(UInt64):i*BLOCK_SIZE÷sizeof(UInt64),
+                           Val{SIMD_FACTOR}())
+
 function k12_singlethreaded(message::AbstractVector{U}) where {U <: Union{UInt64, UInt32, UInt16, UInt8}}
     if length(message) <= BLOCK_SIZE÷sizeof(U)
         return turboshake(UInt128, message, K12_SUFFIXES.one)
     end
-    # Process the S₀ block
-    trunk = Trunk(view(message, 1:BLOCK_SIZE÷sizeof(U)))
-    simd_block_size = SIMD_FACTOR * BLOCK_SIZE÷sizeof(U)
-    message_simd_end = ((length(message) - BLOCK_SIZE÷sizeof(U)) ÷ simd_block_size) * simd_block_size + BLOCK_SIZE÷sizeof(U)
-    n, centre = 0, view(message, BLOCK_SIZE÷sizeof(U)+1:message_simd_end)
-    tail = view(message, message_simd_end+1:length(message))
-    for block in Iterators.partition(centre, simd_block_size)
-        block_u64 = reinterpret(UInt64, block)
-        blocks = ntuple(i -> view(
-            block_u64, ((i-1) * BLOCK_SIZE÷sizeof(UInt64) + 1):(i * BLOCK_SIZE÷sizeof(UInt64))),
-                        SIMD_FACTOR)
+    slices = slice_message(message, Val{SIMD_FACTOR}())
+    n, trunk = 0, Trunk(view(message, slices.init))
+    for sblock in slices.simd
+        sblock_u64 = reinterpret(UInt64, view(message, sblock))
+        blocks = ntuple(i -> view(sblock_u64, SIMD_BLOCKS[i]), Val{SIMD_FACTOR}())
         out_4u32 = turboshake(UInt32, blocks, K12_SUFFIXES.leaf)
         out1u64, out2u64 = reinterpret(NTuple{2, UInt64}, out_4u32)
-        trunk, n = ingest(trunk, out1u64, out2u64), n + length(blocks)
+        trunk, n = ingest(trunk, out1u64, out2u64), n + SIMD_FACTOR
     end
-    for block in Iterators.partition(tail, BLOCK_SIZE÷sizeof(U))
-        trunk, n = ingest(trunk, block), n+1
+    for block in slices.blocks
+        trunk, n = ingest(trunk, view(message, block)), n+1
+    end
+    if !isempty(slices.tail)
+        trunk, n = ingest(trunk, view(message, slices.tail)), n+1
     end
     trunk = ingest(ingest_length(trunk, n), 0xffff, 0x01)
     trunk = pad(trunk, K12_SUFFIXES.many)
     squeeze(UInt128, trunk)
 end
 
+function slice_message((U, mlen)::Tuple{Type, Int}, ::Val{simd_factor}) where {simd_factor}
+    u_block_size = BLOCK_SIZE÷sizeof(U)
+    simd_block_size = simd_factor * u_block_size
+    init = 1:min(mlen, u_block_size)
+    message_simd_end = if simd_factor > 0
+        ((mlen - u_block_size) ÷ simd_block_size) * simd_block_size + last(init)
+    else last(init) end
+    simd_region = last(init)+1:min(mlen, message_simd_end)
+    simd = if simd_factor > 0 Iterators.partition(simd_region, simd_block_size) else () end
+    simd_blocks = ntuple(i -> 1+(i-1)*u_block_size:i*u_block_size, Val{simd_factor}())
+    block_region = last(simd_region)+1:((mlen ÷ u_block_size) * u_block_size)
+    blocks = Iterators.partition(block_region, u_block_size)
+    tail = last(block_region)+1:mlen
+    (; init, simd, simd_blocks, blocks, tail)
 end
+
+slice_message(message::AbstractVector{U}, simd_factor::Val) where {U} =
+    slice_message((U, length(message)), simd_factor)
 
 # TODO: Better multithreaded implementation + heuristic
 function k12_multithreaded(message::AbstractVector{U}) where {U <: Union{UInt64, UInt32, UInt16, UInt8}}
