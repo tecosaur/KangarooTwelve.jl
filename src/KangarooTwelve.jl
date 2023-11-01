@@ -362,6 +362,31 @@ end
 ingest(trunk::Trunk, x, xs...) = ingest(ingest(trunk, x), xs...)
 
 const K12_ZEROBLOCK_SUFFIX = 0xc000000000000000
+const SIMD_FACTOR = 4
+
+function k12_singlethreaded_nosimd(message::AbstractVector{U}) where {U <: Union{UInt64, UInt32, UInt16, UInt8}}
+    if length(message) <= BLOCK_SIZE÷sizeof(U)
+        return turboshake(UInt128, message, K12_SUFFIXES.one)
+    end
+    # Process the S₀ block
+    rate = 25 - CAPACITY ÷ 64
+    state0 = ingest(EMPTY_STATE, Val(CAPACITY), reinterpret(UInt64, view(message, 1:BLOCK_SIZE÷sizeof(U))))
+    trunk = Trunk{rate}(state0, 1 + BLOCK_SIZE % (8 * rate))
+    trunk = ingest(trunk, K12_ZEROBLOCK_SUFFIX)
+    n, rest = 0, view(message, BLOCK_SIZE÷sizeof(U)+1:length(message))
+    for block in Iterators.partition(rest, BLOCK_SIZE÷sizeof(U))
+        out32 = turboshake(UInt32, block, K12_SUFFIXES.leaf)
+        trunk, n = ingest(trunk, out32), n+1
+    end
+    trunk = ingest(ingest_length(trunk, n), 0xffff, 0x01)
+    state = trunk.state
+    # Do extra roll of trunk keccak if needed (likely)
+    if trunk.byte != 1
+        state = keccak_p1600(trunk.state)
+    end
+    state = pad(state, Val{CAPACITY}(), mod1(n, rate), K12_SUFFIXES.many)
+    squeeze(UInt128, state, Val{CAPACITY}())
+end
 
 function k12_singlethreaded(message::AbstractVector{U}) where {U <: Union{UInt64, UInt32, UInt16, UInt8}}
     if length(message) <= BLOCK_SIZE÷sizeof(U)
@@ -372,19 +397,21 @@ function k12_singlethreaded(message::AbstractVector{U}) where {U <: Union{UInt64
     state0 = ingest(EMPTY_STATE, Val(CAPACITY), reinterpret(UInt64, view(message, 1:BLOCK_SIZE÷sizeof(U))))
     trunk = Trunk{rate}(state0, 1 + BLOCK_SIZE % (8 * rate))
     trunk = ingest(trunk, K12_ZEROBLOCK_SUFFIX)
-    n, rest = 0, view(message, BLOCK_SIZE÷sizeof(U)+1:length(message))
-    for block in Iterators.partition(rest, 4 * BLOCK_SIZE÷sizeof(U))
-        if length(block) == 4 * BLOCK_SIZE÷sizeof(U)
-            block_u64 = reinterpret(UInt64, block)
-            blocks = ntuple(i -> view(
-                block_u64, ((i-1) * BLOCK_SIZE÷sizeof(UInt64) + 1): (i * BLOCK_SIZE÷sizeof(UInt64))),
-                            4)
-            out_4u32 = turboshake(UInt32, blocks, K12_SUFFIXES.leaf)
-            out1u64, out2u64 = reinterpret(NTuple{2, UInt64}, out_4u32)
-            trunk, n = ingest(trunk, out1u64, out2u64), n+4
-        else
-            trunk, n = ingest(trunk, block), n+1
-        end
+    simd_block_size = SIMD_FACTOR * BLOCK_SIZE÷sizeof(U)
+    message_simd_end = ((length(message) - BLOCK_SIZE÷sizeof(U)) ÷ simd_block_size) * simd_block_size + BLOCK_SIZE÷sizeof(U)
+    n, centre = 0, view(message, BLOCK_SIZE÷sizeof(U)+1:message_simd_end)
+    tail = view(message, message_simd_end+1:length(message))
+    for block in Iterators.partition(centre, simd_block_size)
+        block_u64 = reinterpret(UInt64, block)
+        blocks = ntuple(i -> view(
+            block_u64, ((i-1) * BLOCK_SIZE÷sizeof(UInt64) + 1):(i * BLOCK_SIZE÷sizeof(UInt64))),
+                        SIMD_FACTOR)
+        out_4u32 = turboshake(UInt32, blocks, K12_SUFFIXES.leaf)
+        out1u64, out2u64 = reinterpret(NTuple{2, UInt64}, out_4u32)
+        trunk, n = ingest(trunk, out1u64, out2u64), n + length(blocks)
+    end
+    for block in Iterators.partition(tail, BLOCK_SIZE÷sizeof(U))
+        trunk, n = ingest(trunk, block), n+1
     end
     trunk = ingest(ingest_length(trunk, n), 0xffff, 0x01)
     state = trunk.state
