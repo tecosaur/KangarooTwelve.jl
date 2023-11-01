@@ -179,12 +179,12 @@ function squeeze(::Type{NTuple{count, U}}, state::NTuple{25, UInt64}, ::Val{capa
                    chunkrest[i - chunksize]
                end, Val{count}())
     elseif U == UInt128
-        ntuple(i -> UInt128(state[2*(i-1)+1]) << 64 + state[2*i], Val{count}())
+        ntuple(i -> state[2*(i-1)+1] + UInt128(state[2*i]) << 64, Val{count}())
     elseif U == UInt64
         ntuple(i -> state[i], Val{count}())
     else
         byteratio = sizeof(UInt64)÷sizeof(U)
-        ntuple(i -> (state[fld1(i, byteratio)] >> (8 * sizeof(U) * mod(-i, byteratio))) % U, Val{count}())
+        ntuple(i -> (state[fld1(i, byteratio)] >> (8 * sizeof(U) * mod(i-1, byteratio))) % U, Val{count}())
     end
 end
 

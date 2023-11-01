@@ -83,48 +83,48 @@ bitpattern(num::Int) =
 @testset "Turboshake" begin
     # Generated from the reference implementation: TurboSHAKE.py
     # 256-bit capacity
-    @test turboshake(UInt8,   UInt8[],          0x01, Val(256)) == 0x5a
-    @test turboshake(UInt16,  UInt8[],          0x01, Val(256)) == 0x5a20
-    @test turboshake(UInt32,  UInt8[],          0x01, Val(256)) == 0x5a2078b0
+    @test turboshake(UInt8,   UInt8[],          0x01, Val(256)) == 0x86
+    @test turboshake(UInt16,  UInt8[],          0x01, Val(256)) == 0x8c86
+    @test turboshake(UInt32,  UInt8[],          0x01, Val(256)) == 0x53bd8c86
     @test turboshake(UInt64,  UInt8[],          0x01, Val(256)) == 0x5a2078b053bd8c86
-    @test turboshake(UInt128, UInt8[],          0x01, Val(256)) == 0x5a2078b053bd8c86037d1f945d8185bb
-    @test turboshake(UInt128, UInt8[],          0x07, Val(256)) == 0x668c3b0bd33a225a0f43edfc8c0443a2
-    @test turboshake(UInt128, UInt8[],          0x0c, Val(256)) == 0xfad5d126e862642c3b3a8b4dae919b98
-    @test turboshake(UInt128, UInt8[],          0x17, Val(256)) == 0x5bac3dcdebd5bf69fcb37fc2b8b69747
-    @test turboshake(UInt128, UInt8[],          0x80, Val(256)) == 0xe95a8b6d8463efde8237b3b479722729
-    @test turboshake(UInt128, bitpattern(17^1), 0x01, Val(256)) == 0xed14710a335f0f6fbaa8f812d0975b34
-    @test turboshake(UInt128, bitpattern(17^2), 0x01, Val(256)) == 0xadb55373a3ca3262819297eb5b6ee1b0
-    @test turboshake(UInt128, bitpattern(17^3), 0x01, Val(256)) == 0xaae286078705816668a03a5687847180
-    @test turboshake(UInt128, bitpattern(17^4), 0x01, Val(256)) == 0xc296c50edde75d79d6acc24a78d14501
-    @test turboshake(UInt128, bitpattern(17^5), 0x01, Val(256)) == 0xf7bcbc6252e085419107718af0504ff7
-    @test turboshake(UInt128, bitpattern(17^6), 0x01, Val(256)) == 0xaa8ff5f76c0ce4dbef49a527ffd73f43
+    @test turboshake(UInt128, UInt8[],          0x01, Val(256)) == 0x037d1f945d8185bb5a2078b053bd8c86
+    @test turboshake(UInt128, UInt8[],          0x07, Val(256)) == 0x0f43edfc8c0443a2668c3b0bd33a225a
+    @test turboshake(UInt128, UInt8[],          0x0c, Val(256)) == 0x3b3a8b4dae919b98fad5d126e862642c
+    @test turboshake(UInt128, UInt8[],          0x17, Val(256)) == 0xfcb37fc2b8b697475bac3dcdebd5bf69
+    @test turboshake(UInt128, UInt8[],          0x80, Val(256)) == 0x8237b3b479722729e95a8b6d8463efde
+    @test turboshake(UInt128, bitpattern(17^1), 0x01, Val(256)) == 0xbaa8f812d0975b34ed14710a335f0f6f
+    @test turboshake(UInt128, bitpattern(17^2), 0x01, Val(256)) == 0x819297eb5b6ee1b0adb55373a3ca3262
+    @test turboshake(UInt128, bitpattern(17^3), 0x01, Val(256)) == 0x68a03a5687847180aae2860787058166
+    @test turboshake(UInt128, bitpattern(17^4), 0x01, Val(256)) == 0xd6acc24a78d14501c296c50edde75d79
+    @test turboshake(UInt128, bitpattern(17^5), 0x01, Val(256)) == 0x9107718af0504ff7f7bcbc6252e08541
+    @test turboshake(UInt128, bitpattern(17^6), 0x01, Val(256)) == 0xef49a527ffd73f43aa8ff5f76c0ce4db
     # 512-bit capacity
-    @test turboshake(UInt8,   UInt8[],          0x01, Val(512)) == 0x6d
-    @test turboshake(UInt16,  UInt8[],          0x01, Val(512)) == 0x6dde
-    @test turboshake(UInt32,  UInt8[],          0x01, Val(512)) == 0x6dde3b94
+    @test turboshake(UInt8,   UInt8[],          0x01, Val(512)) == 0xe3
+    @test turboshake(UInt16,  UInt8[],          0x01, Val(512)) == 0xdde3
+    @test turboshake(UInt32,  UInt8[],          0x01, Val(512)) == 0xf02ddde3
     @test turboshake(UInt64,  UInt8[],          0x01, Val(512)) == 0x6dde3b94f02ddde3
-    @test turboshake(UInt128, UInt8[],          0x01, Val(512)) == 0x6dde3b94f02ddde35cf35960c39ee382
-    @test turboshake(UInt128, UInt8[],          0x07, Val(512)) == 0x53f1f8ec065b554a49d0d015955ccf8c
-    @test turboshake(UInt128, UInt8[],          0x0c, Val(512)) == 0x0695f15745a8783c16f64c66851915a6
-    @test turboshake(UInt128, UInt8[],          0x17, Val(512)) == 0xf11ff3320242f6dcba1d480c64e91d71
-    @test turboshake(UInt128, UInt8[],          0x80, Val(512)) == 0x90bbc184dfa4032a3f8f58909ad17543
-    @test turboshake(UInt128, bitpattern(17^1), 0x01, Val(512)) == 0x53b75587187da41dbd5b67f2a842a207
-    @test turboshake(UInt128, bitpattern(17^2), 0x01, Val(512)) == 0xb016f97087938ca4909b27e2294e769d
-    @test turboshake(UInt128, bitpattern(17^3), 0x01, Val(512)) == 0xa7ba463a8d66e875c2c23fd3c73a5cc7
-    @test turboshake(UInt128, bitpattern(17^4), 0x01, Val(512)) == 0xa37b0ce45396a4ff01e39bd978c2113f
-    @test turboshake(UInt128, bitpattern(17^5), 0x01, Val(512)) == 0x401867b8beb3d22a112daf7f8f5e9dfa
-    @test turboshake(UInt128, bitpattern(17^6), 0x01, Val(512)) == 0x85954968a7b32c619843bab8cbb9f6ee
+    @test turboshake(UInt128, UInt8[],          0x01, Val(512)) == 0x5cf35960c39ee3826dde3b94f02ddde3
+    @test turboshake(UInt128, UInt8[],          0x07, Val(512)) == 0x49d0d015955ccf8c53f1f8ec065b554a
+    @test turboshake(UInt128, UInt8[],          0x0c, Val(512)) == 0x16f64c66851915a60695f15745a8783c
+    @test turboshake(UInt128, UInt8[],          0x17, Val(512)) == 0xba1d480c64e91d71f11ff3320242f6dc
+    @test turboshake(UInt128, UInt8[],          0x80, Val(512)) == 0x3f8f58909ad1754390bbc184dfa4032a
+    @test turboshake(UInt128, bitpattern(17^1), 0x01, Val(512)) == 0xbd5b67f2a842a20753b75587187da41d
+    @test turboshake(UInt128, bitpattern(17^2), 0x01, Val(512)) == 0x909b27e2294e769db016f97087938ca4
+    @test turboshake(UInt128, bitpattern(17^3), 0x01, Val(512)) == 0xc2c23fd3c73a5cc7a7ba463a8d66e875
+    @test turboshake(UInt128, bitpattern(17^4), 0x01, Val(512)) == 0x01e39bd978c2113fa37b0ce45396a4ff
+    @test turboshake(UInt128, bitpattern(17^5), 0x01, Val(512)) == 0x112daf7f8f5e9dfa401867b8beb3d22a
+    @test turboshake(UInt128, bitpattern(17^6), 0x01, Val(512)) == 0x9843bab8cbb9f6ee85954968a7b32c61
     # Odd capacities
     # (I suspect these are broken because the capacities aren't a multiple of 64)
-    @test_broken turboshake(UInt128, bitpattern(11^4), 0x2a, Val(8))   == 0x4d30b26a92e48740078cfb89b5b84ba8
-    @test_broken turboshake(UInt128, bitpattern(11^4), 0x22, Val(56))  == 0x4f327ae0a6f76feffd731d4a42658ff6
-    @test_broken turboshake(UInt128, bitpattern(11^4), 0x7e, Val(520)) == 0x0b8f6a9f36e874d486a385f5f61243bc
+    @test_broken turboshake(UInt128, bitpattern(11^4), 0x2a, Val(8))   == 0x078cfb89b5b84ba84d30b26a92e48740
+    @test_broken turboshake(UInt128, bitpattern(11^4), 0x22, Val(56))  == 0xfd731d4a42658ff64f327ae0a6f76fef
+    @test_broken turboshake(UInt128, bitpattern(11^4), 0x7e, Val(520)) == 0x86a385f5f61243bc0b8f6a9f36e874d4
     # Representational equivalence
     let data = [UInt16(n) for n in 1:10000]
-        @test turboshake(UInt128, reinterpret(UInt8, data))  == 0xf78e10a5658c8309ede558468dc82194
-        @test turboshake(UInt128, reinterpret(UInt16, data)) == 0xf78e10a5658c8309ede558468dc82194
-        @test turboshake(UInt128, reinterpret(UInt32, data)) == 0xf78e10a5658c8309ede558468dc82194
-        @test turboshake(UInt128, reinterpret(UInt64, data)) == 0xf78e10a5658c8309ede558468dc82194
+        @test turboshake(UInt128, reinterpret(UInt8, data))  == 0xede558468dc82194f78e10a5658c8309
+        @test turboshake(UInt128, reinterpret(UInt16, data)) == 0xede558468dc82194f78e10a5658c8309
+        @test turboshake(UInt128, reinterpret(UInt32, data)) == 0xede558468dc82194f78e10a5658c8309
+        @test turboshake(UInt128, reinterpret(UInt64, data)) == 0xede558468dc82194f78e10a5658c8309
     end
 end
 
