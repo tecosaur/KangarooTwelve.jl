@@ -119,6 +119,13 @@ bitpattern(num::Int) =
     @test_broken turboshake(UInt128, bitpattern(11^4), 0x2a, Val(8))   == 0x4d30b26a92e48740078cfb89b5b84ba8
     @test_broken turboshake(UInt128, bitpattern(11^4), 0x22, Val(56))  == 0x4f327ae0a6f76feffd731d4a42658ff6
     @test_broken turboshake(UInt128, bitpattern(11^4), 0x7e, Val(520)) == 0x0b8f6a9f36e874d486a385f5f61243bc
+    # Representational equivalence
+    let data = [UInt16(n) for n in 1:10000]
+        @test turboshake(UInt128, reinterpret(UInt8, data))  == 0xf78e10a5658c8309ede558468dc82194
+        @test turboshake(UInt128, reinterpret(UInt16, data)) == 0xf78e10a5658c8309ede558468dc82194
+        @test turboshake(UInt128, reinterpret(UInt32, data)) == 0xf78e10a5658c8309ede558468dc82194
+        @test turboshake(UInt128, reinterpret(UInt64, data)) == 0xf78e10a5658c8309ede558468dc82194
+    end
 end
 
 @testset "Turboshake SIMD" begin
