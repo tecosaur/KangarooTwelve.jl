@@ -288,6 +288,9 @@ end
 squeeze(T::Type, sponge::Sponge{rate}) where {rate} =
     squeeze(T, sponge.state, Val{(25 - rate) * 64}())
 
+squeeze!(output::AbstractVector{<:Unsigned}, sponge::Sponge{rate}) where {rate} =
+    squeeze!(output, sponge.state, Val{(25 - rate) * 64}())
+
 ## KangarooTwelve
 
 const BLOCK_SIZE = 8192

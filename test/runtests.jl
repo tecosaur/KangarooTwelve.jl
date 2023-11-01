@@ -1,8 +1,8 @@
 using KangarooTwelve
 using Test
 
-import KangarooTwelve: keccak_p1600, ingest, pad, squeeze, turboshake,
-    Sponge, overwrite, ingest_length, k12_singlethreaded, k12
+import KangarooTwelve: keccak_p1600, ingest, pad, squeeze, squeeze!,
+    turboshake, Sponge, overwrite, ingest_length, k12_singlethreaded, k12
 
 @testset "keccak" begin
     keccak_1600_init =
@@ -85,6 +85,7 @@ end
     @test reinterpret(UInt128, squeeze(NTuple{16, UInt8}, sponge)) == 0x100f0e0d0c0b0a090807060504030201
     # Wrap around
     @test squeeze(NTuple{22, UInt64}, sponge)[end] == first(keccak_p1600(sponge.state))
+    @test squeeze!(Vector{UInt64}(undef, 1000), sponge)[22] == first(keccak_p1600(sponge.state))
 end
 
 @testset "Length encoding" begin
