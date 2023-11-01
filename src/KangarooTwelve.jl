@@ -162,12 +162,12 @@ pad(states::NTuple{25, Vec{N, UInt64}}, capacity, lastbyte::NTuple{N, Int64}, de
     ntuple(i -> pad(ntuple(k -> states[k][i], Val{25}()), capacity, lastbyte[i], delimsuffix), Val{N}())
 
 """
-    squeeze(outtype::Type, state::NTuple{25, UInt64}, ::Val{capacity}=Val{CAPACITY}())
+    squeeze(outtype::Type, state::NTuple{25, UInt64}, ::Val{capacity})
 
 Squeeze an `outtype` out of `state`. `outtype` can be an `Unsigned` type or an
 unsigned `NTuple`.
 """
-function squeeze(::Type{NTuple{count, U}}, state::NTuple{25, UInt64}, ::Val{capacity}=Val{CAPACITY}()) where {capacity, count, U<:Unsigned}
+function squeeze(::Type{NTuple{count, U}}, state::NTuple{25, UInt64}, ::Val{capacity}) where {capacity, count, U<:Unsigned}
     rate = 25 - capacity ÷ 64
     if count * sizeof(U) > rate * sizeof(UInt64)
         chunksize = rate * sizeof(UInt64) ÷ sizeof(U)
@@ -188,7 +188,7 @@ function squeeze(::Type{NTuple{count, U}}, state::NTuple{25, UInt64}, ::Val{capa
     end
 end
 
-squeeze(::Type{U}, state::NTuple{25, UInt64}, capacity::Val=Val{CAPACITY}()) where {U <: Unsigned} =
+squeeze(::Type{U}, state::NTuple{25, UInt64}, capacity::Val) where {U <: Unsigned} =
     squeeze(NTuple{1, U}, state, capacity) |> first
 
 # For SIMD results
@@ -202,11 +202,11 @@ unwrap_simd(vals::NTuple{V, Vec{N, T}}) where {V, N, T} =
 
 # `squeeze!` isn't actually called anywhere, but it seems nice to have for completeness.
 """
-    squeeze!(output::Vector{UInt64}, state::NTuple{25, UInt64}, ::Val{capacity}=Val{CAPACITY}())
+    squeeze!(output::Vector{UInt64}, state::NTuple{25, UInt64}, ::Val{capacity})
 
 Squeeze `state` into `output`.
 """
-function squeeze!(output::Vector{UInt64}, state::NTuple{25, UInt64}, ::Val{capacity}=Val{CAPACITY}()) where {capacity}
+function squeeze!(output::Vector{UInt64}, state::NTuple{25, UInt64}, ::Val{capacity}) where {capacity}
     rate = 25 - capacity ÷ 64
     if length(output) <= rate
         output .= state[1:length(output)]
