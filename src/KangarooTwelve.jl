@@ -71,17 +71,8 @@ end
 
 const CAPACITY = 256
 
-struct Trunk{rate}
-    state::NTuple{25, UInt64}
-    byte::Int # index
-end
-
-Trunk{rate}() where {rate} = Trunk{rate}(EMPTY_STATE, 1)
-Trunk() = Trunk{25 - CAPACITY ÷ 64}()
-
 """
     ingest(state::NTuple{25, UInt64}, block::NTuple{rate, UInt64})
-    ingest(trunk::Trunk{rate}, block::NTuple{rate, UInt64})
 
 Ingest a single `block` of input (with implied `rate`) into `state` or `trunk`.
 
@@ -94,9 +85,6 @@ function ingest(state::NTuple{25, UInt64}, block::NTuple{rate, UInt64}) where {r
     else state[i] end
     keccak_p1600(state)
 end
-
-ingest(trunk::Trunk{rate}, block::NTuple{rate, UInt64}) where {rate} =
-    Trunk{rate}(ingest(trunk.state, block), 1)
 
 """
     ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVector{<:Unsigned})
@@ -168,10 +156,6 @@ function pad(state::NTuple{25, UInt64}, ::Val{capacity}, lastbyte::Int, delimsuf
     state = Base.setindex(state, state[rate] ⊻ (0x80 % UInt64) << 56, rate)
     keccak_p1600(state)
 end
-
-pad(trunk::Trunk{rate}, delimsuffix) where {rate} =
-    Trunk(pad(trunk.state, Val{(25 - rate) * 64}(),
-              trunk.byte, delimsuffix), trunk.byte)
 
 # For SIMD results
 pad(states::NTuple{25, Vec{N, UInt64}}, capacity, lastbyte::NTuple{N, Int64}, delimsuffix::UInt8) where {N} =
@@ -260,6 +244,45 @@ function turboshake(output::Type, # <:Unsigned or NTuple{n, <:Unsigned}
     state = pad(state, Val{capacity}(), lastindex, delimsuffix)
     squeeze(output, state, Val{capacity}())
 end
+
+## Trunk
+
+struct Trunk{rate}
+    state::NTuple{25, UInt64}
+    byte::Int # index
+end
+
+Trunk{rate}() where {rate} = Trunk{rate}(EMPTY_STATE, 1)
+Trunk() = Trunk{25 - CAPACITY ÷ 64}()
+
+function Trunk{rate}(zeroblock::AbstractVector{U}) where {rate, U<:Unsigned}
+    capacity = (25 - rate) * 64
+    trunk = if length(zeroblock) * sizeof(U) == BLOCK_SIZE
+        zerostate = ingest(EMPTY_STATE, Val{capacity}(), reinterpret(UInt64, zeroblock))
+        Trunk{rate}(zerostate, 1 + BLOCK_SIZE % (8 * rate))
+    else
+        zerostate = ingest(EMPTY_STATE, Val{capacity}(), zeroblock)
+        Trunk{rate}(zerostate, 1 + (length(zeroblock) * sizeof(U)) % (8 * rate))
+    end
+    ingest(trunk, K12_ZEROBLOCK_SUFFIX)
+end
+
+Trunk(zeroblock::AbstractVector{<:Unsigned}) =
+    Trunk{25 - CAPACITY ÷ 64}(zeroblock)
+
+ingest(trunk::Trunk{rate}, block::NTuple{rate, UInt64}) where {rate} =
+    Trunk{rate}(ingest(trunk.state, block), 1)
+
+function pad(trunk::Trunk{rate}, delimsuffix::UInt8) where {rate}
+    (; state, byte) = trunk
+    if byte != 1
+        state = keccak_p1600(state)
+    end
+    Trunk{rate}(pad(state, Val{(25 - rate) * 64}(), byte, delimsuffix), 1)
+end
+
+squeeze(T::Type, trunk::Trunk{rate}) where {rate} =
+    squeeze(T, trunk.state, Val{(25 - rate) * 64}())
 
 ## KangarooTwelve
 
