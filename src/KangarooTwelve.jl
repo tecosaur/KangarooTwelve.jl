@@ -206,17 +206,21 @@ unwrap_simd(vals::NTuple{V, Vec{N, T}}) where {V, N, T} =
 
 Squeeze `state` into `output`.
 """
-function squeeze!(output::Vector{UInt64}, state::NTuple{25, UInt64}, ::Val{capacity}) where {capacity}
+function squeeze!(output::AbstractVector{U}, state::NTuple{25, UInt64}, ::Val{capacity}) where {capacity, U<:Unsigned}
     rate = 25 - capacity ÷ 64
-    if length(output) <= rate
-        output .= state[1:length(output)]
+    if length(output) * sizeof(U) <= rate * 8
+        ssize = div(length(output) * sizeof(U), 8, RoundUp)
+        oslice = reinterpret(NTuple{ssize * 8 ÷ sizeof(U), U}, state[1:ssize])
+        output .= oslice[1:length(output)]
     else
         index = 1
         while index < length(output)
             index == 1 || (state = keccak_p1600(state))
-            bsize = min(rate, length(output) - index + 1)
-            output[index:index+bsize-1] .= state[1:bsize]
-            index += bsize
+            osize = min(rate * 8 ÷ sizeof(U), length(output) - index + 1)
+            ssize = div(osize * sizeof(U), 8, RoundUp)
+            oslice = reinterpret(NTuple{ssize * 8 ÷ sizeof(U), U}, state[1:ssize])
+            output[index:index+osize-1] .= oslice[1:osize]
+            index += osize
         end
     end
     output
