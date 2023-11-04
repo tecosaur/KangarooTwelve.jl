@@ -126,7 +126,7 @@ function ingest((; state, byte)::ByteSponge{rate}, x::UInt8) where {rate}
 end
 
 function ingest(sponge::ByteSponge{rate}, x::U) where {rate, U<:Unsigned}
-    for byte in reinterpret(NTuple{sizeof(U), UInt8}, x)
+    for byte in ntupleinterpret(UInt8, x)
         sponge = ingest(sponge, byte)
     end
     sponge

@@ -48,12 +48,12 @@ function slice_message(message::AbstractVector{U}, customisation::AbstractVector
     slices = slice_message((U, length(message)), (V, length(customisation)), Val{simd_factor}())
     (; init = view(message, slices.init),
      simd = if simd_factor > 0
-         partition(reinterpret(UInt64, view(message, slices.simd_region)), BLOCK_SIZE÷sizeof(UInt64) * simd_factor)
+         partition(uinterpret(UInt64, view(message, slices.simd_region)), BLOCK_SIZE÷sizeof(UInt64) * simd_factor)
      else () end,
-     blocks = partition(reinterpret(UInt64, view(message, slices.block_region)), BLOCK_SIZE÷sizeof(UInt64)),
+     blocks = partition(uinterpret(UInt64, view(message, slices.block_region)), BLOCK_SIZE÷sizeof(UInt64)),
      tail = view(message, slices.tail),
      custom_neck = view(customisation, slices.custom_neck),
-     custom_blocks = partition(reinterpret(UInt64, view(customisation, slices.custom_block_region)), BLOCK_SIZE÷sizeof(UInt64)),
+     custom_blocks = partition(uinterpret(UInt64, view(customisation, slices.custom_block_region)), BLOCK_SIZE÷sizeof(UInt64)),
      custom_tail = view(customisation, slices.custom_tail))
 end
 

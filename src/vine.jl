@@ -40,7 +40,7 @@ function ingest((; trunk, leaf, nbytes)::GerminatingVine{rate}, x::U) where {rat
                    leaf, nbytes + sizeof(U))
     else
         vine = GerminatingVine(trunk, leaf, nbytes)
-        for byte in reinterpret(NTuple{sizeof(U), UInt8}, x)
+        for byte in ntupleinterpret(UInt8, x)
             vine = ingest(vine, byte)
         end
         vine
@@ -79,7 +79,7 @@ function ingest(vine::Vine{rate}, x::U) where {rate, U<:UInt8to64}
         Vine(ingest(vine.trunk, squeeze(NTuple{4, UInt64}, vine.leaf)),
              ingest(ByteSponge{rate}(), x), vine.nbytes + sizeof(U))
     else # `x` is not aligned with the partial data, so ingest byte by byte
-        for byte in reinterpret(NTuple{sizeof(U), UInt8}, x)
+        for byte in ntupleinterpret(UInt8, x)
             vine = ingest(vine, byte)
         end
         vine

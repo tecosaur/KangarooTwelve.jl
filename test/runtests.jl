@@ -2,7 +2,8 @@ using KangarooTwelve
 using Test
 
 import KangarooTwelve: keccak_p1600, ingest, pad, squeeze, squeeze!,
-    turboshake, Sponge, ByteSponge, ingest_length, k12_singlethreaded, k12
+    turboshake, Sponge, ByteSponge, ingest_length, k12_singlethreaded, k12,
+    ntupleinterpret, uinterpret
 
 @testset "keccak" begin
     keccak_1600_init =
@@ -72,17 +73,17 @@ end
 end
 
 @testset "Sponge squeezing" begin
-    sponge = Sponge{21}(reinterpret(NTuple{25, UInt64}, Tuple((UInt8(i) for i in 1:200))), 1)
+    sponge = Sponge{21}(ntupleinterpret(UInt64, Tuple((UInt8(i) for i in 1:200))), 1)
     @test squeeze(UInt8, sponge) == 0x01
     @test squeeze(UInt16, sponge) == 0x0201
     @test squeeze(UInt32, sponge) == 0x04030201
     @test squeeze(UInt64, sponge) == 0x0807060504030201
     @test squeeze(UInt128, sponge) == 0x100f0e0d0c0b0a090807060504030201
     # Representational equivalence
-    @test reinterpret(UInt128, squeeze(NTuple{2, UInt64}, sponge)) == 0x100f0e0d0c0b0a090807060504030201
-    @test reinterpret(UInt128, squeeze(NTuple{4, UInt32}, sponge)) == 0x100f0e0d0c0b0a090807060504030201
-    @test reinterpret(UInt128, squeeze(NTuple{8, UInt16}, sponge)) == 0x100f0e0d0c0b0a090807060504030201
-    @test reinterpret(UInt128, squeeze(NTuple{16, UInt8}, sponge)) == 0x100f0e0d0c0b0a090807060504030201
+    @test uinterpret(UInt128, squeeze(NTuple{2, UInt64}, sponge)) == 0x100f0e0d0c0b0a090807060504030201
+    @test uinterpret(UInt128, squeeze(NTuple{4, UInt32}, sponge)) == 0x100f0e0d0c0b0a090807060504030201
+    @test uinterpret(UInt128, squeeze(NTuple{8, UInt16}, sponge)) == 0x100f0e0d0c0b0a090807060504030201
+    @test uinterpret(UInt128, squeeze(NTuple{16, UInt8}, sponge)) == 0x100f0e0d0c0b0a090807060504030201
     # Wrap around
     @test squeeze(NTuple{22, UInt64}, sponge)[end] == first(keccak_p1600(sponge.state))
     @test squeeze!(Vector{UInt64}(undef, 1000), sponge)[22] == first(keccak_p1600(sponge.state))

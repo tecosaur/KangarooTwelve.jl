@@ -3,6 +3,31 @@
 cap2rate(capacity::Integer) = 25 - capacity ÷ 64
 rate2cap(rate::Integer) = (25 - rate) * 64
 
+@static if VERSION >= v"1.10-beta"
+    ntupleinterpret(::Type{T}, x::U) where {T<:Unsigned, U<:Unsigned} =
+        reinterpret(NTuple{sizeof(U) ÷ sizeof(T), T}, x)
+    ntupleinterpret(::Type{T}, x::NTuple{N, U}) where {T<:Unsigned, N, U<:Unsigned} =
+        reinterpret(NTuple{N * sizeof(U) ÷ sizeof(T), T}, x)
+    uinterpret(::Type{T}, x::Union{U, NTuple{N, U}}) where {T<:Unsigned, N, U<:Unsigned} =
+        reinterpret(T, x)
+else
+    @generated function ntupleinterpret(::Type{T}, x::U) where {T<:Unsigned, U<:Unsigned}
+        Expr(:tuple, ntuple(i -> :(x >> $(8 * (i - 1) * sizeof(T)) % $T), sizeof(U) ÷ sizeof(T))...)
+    end
+    @generated function ntupleinterpret(::Type{T}, x::NTuple{N, U}) where {T<:Unsigned, N, U<:Unsigned}
+        if sizeof(T) <= sizeof(U)
+            Expr(:tuple, ntuple(i -> :(x[$(fld1(i, sizeof(U)))] >> $(8 * ((i - 1) % sizeof(U)) * sizeof(T)) % $T),
+                                N * sizeof(U) ÷ sizeof(T))...)
+        else
+            Expr(:tuple, ntuple(i ->
+                Expr(:call, :+, ntuple(j -> :((x[$(sizeof(T) ÷ sizeof(U) * (i-1) + j)] % $T) << $(8 * sizeof(U) * (j-1))), sizeof(T) ÷ sizeof(U))...),
+                                (N * sizeof(U)) ÷ sizeof(T))...)
+        end
+    end
+    uinterpret(::Type{T}, x::Union{U, NTuple{N, U}}) where {T<:Unsigned, N, U<:Unsigned} =
+        first(ntupleinterpret(T, x))
+end
+
 # Ingestion, padding, and squeezing
 
 """
@@ -144,7 +169,7 @@ function squeeze!(output::AbstractVector{U}, state::NTuple{25, UInt64}, ::Val{ca
     rate = cap2rate(capacity)
     if length(output) * sizeof(U) <= rate * 8
         ssize = div(length(output) * sizeof(U), 8, RoundUp)
-        oslice = reinterpret(NTuple{ssize * 8 ÷ sizeof(U), U}, state[1:ssize])
+        oslice = ntupleinterpret(U, state[1:ssize])
         output .= oslice[1:length(output)]
     else
         index = 1
@@ -152,7 +177,7 @@ function squeeze!(output::AbstractVector{U}, state::NTuple{25, UInt64}, ::Val{ca
             index == 1 || (state = keccak_p1600(state))
             osize = min(rate * 8 ÷ sizeof(U), length(output) - index + 1)
             ssize = div(osize * sizeof(U), 8, RoundUp)
-            oslice = reinterpret(NTuple{ssize * 8 ÷ sizeof(U), U}, state[1:ssize])
+            oslice = ntupleinterpret(U, state[1:ssize])
             output[index:index+osize-1] .= oslice[1:osize]
             index += osize
         end
