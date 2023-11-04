@@ -41,7 +41,7 @@ function ingest((; trunk, leaf, nbytes)::GerminatingVine{rate}, leaflet::Abstrac
     leafletbytes = length(leaflet) * sizeof(U)
     if nbytes == 0 && leafletbytes == BLOCK_SIZE
         zerostate = ingest(EMPTY_STATE, Val{rate2cap(rate)}(), reinterpret(UInt64, leaflet))
-        Vine{rate}(Sponge{rate}(zerostate, 1 + BLOCK_SIZE % (8 * rate)),
+        Vine{rate}(ingest(Sponge{rate}(zerostate, 1 + (BLOCK_SIZE ÷ 8) % rate), K12_ZEROBLOCK_SUFFIX),
                    leaf, BLOCK_SIZE)
     elseif nbytes + leafletbytes < BLOCK_SIZE
         GerminatingVine{rate}(

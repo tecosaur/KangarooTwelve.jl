@@ -41,7 +41,7 @@ const UInt8to64 = Union{UInt64, UInt32, UInt16, UInt8}
 
 const CAPACITY = 256
 const RATE = 25 - CAPACITY ÷ 64
-const BLOCK_SIZE = 8192
+const BLOCK_SIZE = 8192 # 64 * 128
 
 const SIMD_FACTOR = 4
 
