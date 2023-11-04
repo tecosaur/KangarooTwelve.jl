@@ -56,8 +56,8 @@ This breaks `message` into rate-sized blocks and then ingests them (as per
 function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVector{UInt64}) where {capacity}
     rate = cap2rate(capacity)
     loopend = length(message) - length(message) % rate
-    for r in 1:rate:loopend
-        block = @view message[r:r-1+rate]
+    for offset in 1:rate:loopend
+        block = @view message[offset:offset-1+rate]
         state = keccak_p1600(@ntuple 25 i -> state[i] ⊻ if i <= rate block[i] else zero(UInt64) end)
     end
     block = @view message[loopend+1:end]
