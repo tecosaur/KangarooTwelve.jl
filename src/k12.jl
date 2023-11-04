@@ -5,6 +5,17 @@ function k12_singlethreaded(message::AbstractVector{<:UInt8to64}, customisation:
     squeeze(UInt128, finalise(vine))
 end
 
+function k12_singlethreaded(io::IO, customisation::AbstractVector{<:UInt8to64})
+    block = Vector{UInt8}(undef, BLOCK_SIZE)
+    vine = GerminatingVine{RATE}()
+    while (size = readbytes!(io, block)) > 0
+        vine = ingest(vine, view(block, 1:size))
+    end
+    vine = ingest(vine, customisation)
+    vine = ingest_length(vine, customisation)
+    squeeze(UInt128, finalise(vine))
+end
+
 function k12_singlethreaded_simd(message::AbstractVector{U}, customisation::AbstractVector{<:UInt8to64}) where {U<:UInt8to64}
     if length(message) <= BLOCK_SIZE÷sizeof(U)
         return k12_singlethreaded(message, customisation)
@@ -44,21 +55,6 @@ function k12_multithreaded(message::AbstractVector{U}) where {U <: UInt8to64}
         @spawn turboshake(UInt32, chunk, K12_SUFFIXES.leaf)
     end
     map(fetch, tasks)
-end
-
-function k12_singlethreaded(io::IO)
-    block = Vector{UInt8}(undef, BLOCK_SIZE)
-    if (size = readbytes!(io, block)) < BLOCK_SIZE
-        return k12_singlethreaded(view(block, 1:size))
-    end
-    n, sponge = 0, Sponge(block)
-    while (size = readbytes!(io, block)) > 0
-        out32 = turboshake(UInt32, view(block, 1:size), K12_SUFFIXES.leaf)
-        sponge, n = ingest(sponge, out32), n+1
-    end
-    sponge = ingest(ingest_length(sponge, n), 0xffff, 0x01)
-    sponge = pad(sponge, K12_SUFFIXES.many)
-    squeeze(UInt128, sponge)
 end
 
 """
