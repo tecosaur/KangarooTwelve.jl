@@ -6,7 +6,7 @@ abstract type AbstractSponge{rate} end
 """
     Sponge{rate}
 
-A Keccak state that keeps track of the last lane updated.
+A Keccak state that keeps track of the last *lane* updated.
 
 See also: `ingest`, `pad`, and `squeeze`.
 """
@@ -51,21 +51,36 @@ end
 pad((; state, lane)::Sponge{rate}, delimsuffix::UInt8) where {rate} =
     Sponge{rate}(pad(state, Val{rate2cap(rate)}(), 8 * (lane-1) + 1, delimsuffix), 1)
 
+"""
+    squeeze(T::Type, sponge::AbstractSponge)
+
+Squeeze a `T` out of `sponge`.
+"""
 squeeze(T::Type, (; state)::AbstractSponge{rate}) where {rate} =
     squeeze(T, state, Val{rate2cap(rate)}())
 
+"""
+    squeeze!(output::Vector{UInt64}, sponge::AbstractSponge)
+
+Squeeze `sponge` into `output`.
+"""
 squeeze!(output::AbstractVector{<:Unsigned}, (; state)::AbstractSponge{rate}) where {rate} =
     squeeze!(output, state, Val{rate2cap(rate)}())
 
 """
-    ingest(sponge::Sponge, as::Type{<:Unsigned}, leaf::AbstractVector{<:Unsigned})
+    ingest(sponge::AbstractSponge, as::Type{<:Unsigned}, leaf::AbstractVector{<:Unsigned})
 
 Ingest `leaf` into `sponge` by transforming it to an `as` via `turboshake`, and
 ingesting that result.
 """
-ingest(sponge::AbstractSponge{rate}, T::Type, leaf::AbstractVector{U}) where {rate, U <: UInt8to64} =
+ingest(sponge::AbstractSponge{rate}, T::Type, leaf::AbstractVector{U}) where {rate, U<:UInt8to64} =
     ingest(sponge, turboshake(T, leaf, K12_SUFFIXES.leaf))
 
+"""
+    ingest(sponge::AbstractSponge, block::AbstractVector{<:Unsigned})
+
+Ingest each element of `block` into `sponge`.
+"""
 function ingest(sponge::AbstractSponge, block::AbstractVector{U}) where {U <: UInt8to64}
     # REVIEW optimize? This is just a quick hack
     for b in block
@@ -81,6 +96,13 @@ end
 # we need a second sponge type that can absorb single
 # bytes of data.
 
+"""
+    ByteSponge{rate}
+
+A Keccak state that keeps track of the last *byte* updated.
+
+See also: `ingest`, `pad`, and `squeeze`.
+"""
 struct ByteSponge{rate} <: AbstractSponge{rate}
     state::NTuple{25, UInt64}
     byte::UInt
@@ -115,6 +137,11 @@ function subxor(larger::Ubig, smaller::Usmall, byte::UInt=1) where {Ubig <: Unsi
     larger ⊻ value
 end
 
+"""
+    ingest(sponge::ByteSponge, x::Union{<:Unsigned, NTuple{N, <:Unsigned}})
+
+Ingest `x` into `sponge`.
+"""
 function ingest((; state, byte)::ByteSponge{rate}, x::UInt8) where {rate}
     lane, lbyte = (byte-1) ÷ sizeof(UInt64) + 1, (byte-1) % sizeof(UInt64) + 1
     state = setindex(state, subxor(state[lane], x, lbyte), lane)

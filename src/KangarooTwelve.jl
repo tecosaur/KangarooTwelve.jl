@@ -1,3 +1,22 @@
+"""
+    KangarooTwelve
+
+A pure-Julia implementation of the KangarooTwelve hashing scheme, so named
+because it consists of 12 rounds of Keccak (TurboSHAKE128) with kangaroo
+hopping, allowing for parallel tree-ish hashing termed “leaves stapled to a
+pole”.
+
+This scheme presents a particularly good balance of:
+- Simplicity (Keccak + sponge + hopping)
+- Security (128-bit)
+- Speed (up to ~2bytes/cycle)
+
+It is currently an IETF draft.
+
+-----
+
+See the `k12` function for usage.
+"""
 module KangarooTwelve
 
 using Base.Threads

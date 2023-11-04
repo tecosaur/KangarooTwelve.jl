@@ -1,5 +1,12 @@
 abstract type AbstractVine{rate} end
 
+"""
+    GerminatingVine{rate}
+
+A `vine` that hasn't started to grow leaves yet (see the `k12` docstring).
+
+See also: `Vine`, `ingest`, `ingest_length`, `finalise`.
+"""
 struct GerminatingVine{rate} <: AbstractVine{rate}
     trunk::ByteSponge{rate}
     leaf::ByteSponge{rate}
@@ -9,13 +16,28 @@ end
 GerminatingVine{rate}() where {rate} =
     GerminatingVine{rate}(ByteSponge{rate}(), ByteSponge{rate}(), 0)
 
+"""
+    Vine{rate}
+
+A `vine` with leaves (see the `k12` docstring).
+
+See also: `GerminatingVine`, `ingest`, `ingest_length`, `finalise`.
+"""
 struct Vine{rate} <: AbstractVine{rate}
     trunk::Sponge{rate}
     leaf::ByteSponge{rate}
     nbytes::UInt
 end
 
-function ingest((; trunk, leaf, nbytes)::GerminatingVine{rate}, leaflet::AbstractVector{U}) where {rate, U}
+"""
+    ingest(vine::AbstractVine, leaflet::AbstractVector{<:Unsigned})
+    ingest(vine::AbstractVine, x::Unsigned)
+
+Ingest `leaflet`/`x` into `vine`, this may go into the leaves or the trunk depending
+on the vine type, and may cause the current leaf to be folded into the trunk,
+and a new leaf grown.
+"""
+function ingest((; trunk, leaf, nbytes)::GerminatingVine{rate}, leaflet::AbstractVector{U}) where {rate, U<:Unsigned}
     leafletbytes = length(leaflet) * sizeof(U)
     if nbytes == 0 && leafletbytes == BLOCK_SIZE
         zerostate = ingest(EMPTY_STATE, Val{rate2cap(rate)}(), reinterpret(UInt64, leaflet))
@@ -86,6 +108,11 @@ function ingest(vine::Vine{rate}, x::U) where {rate, U<:UInt8to64}
     end
 end
 
+"""
+    ingest_length(accumulator::Union{<:ByteSponge, <:AbstractVine}, val::UInt, ::Val{bufsize}=Val{8}())
+
+Ingest a right-encoded form of `val` into `accumulator`, allowing the encoding to be up to `bufsize` bytes.
+"""
 function ingest_length(accum::Union{<:ByteSponge, <:AbstractVine}, val::UInt, ::Val{bufsize}=Val{8}()) where {bufsize}
     buffer = ntuple(_ -> 0x00, Val{bufsize}())
     point = 0
@@ -103,6 +130,11 @@ function ingest_length(accum::Union{<:ByteSponge, <:AbstractVine}, arr::Abstract
     ingest_length(accum, UInt(length(arr)) * sizeof(U), Val{bufsize}())
 end
 
+"""
+    finalise(vine::AbstractVine) -> ByteSponge
+
+Finalise `vine` by folding in the current leaf returning the `pad`ded trunk.
+"""
 function finalise((; trunk, leaf, nbytes)::AbstractVine{rate}) where {rate}
     if leaf.byte != 1
         leaf = pad(leaf, K12_SUFFIXES.leaf)

@@ -92,7 +92,7 @@ This scheme presents a good balance of *Simplicity*, *Security*, and *Speed*.
 
 The KangarooTwelve hashing scheme works by splitting the input data into ``n``
 $BLOCK_SIZE-byte blocks (``S₀``, ``S₁``, …, ``Sₙ₋₁``) which are individually
-hashed with [`TurboSHAKE128`](@ref turboshake) to produce "chaining
+hashed with [`TurboSHAKE128`](@ref turboshake) to produce 32-byte "chaining
 values" (CVs), which are put together and ingested to produce the final state.
 
 ```text
@@ -108,9 +108,7 @@ values" (CVs), which are put together and ingested to produce the final state.
 
 This scheme has been described as "leaves on a vine". The hashing of blocks
 ``S₁`` to ``Sₙ₋₁`` is embarassingly parallel, and can be accelerated with both
-SIMD and multithreading. To ensure sufficient data to produce 128 bits of
-entropy from a small number of blocks (each producing a `UInt32` CV), ``S₀`` is
-included in full.
+SIMD and multithreading.
 """
 function k12(data::AbstractVector{<:Unsigned}, customisation::AbstractVector{<:Unsigned}=UInt8[])
     if true # length(data) < heuristic

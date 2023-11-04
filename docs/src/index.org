@@ -1,0 +1,20 @@
+#+title: KangarooTwelve
+
+* Background
+
+A pure-Julia implementation of the [[https://keccak.team/kangarootwelve.html][KangarooTwelve]] hashing scheme, so named
+because it consists of 12 rounds of [[https://keccak.team/keccak.html][Keccak]] ([[https://keccak.team/turboshake.html][TurboSHAKE]]128) with kangaroo
+hopping, allowing for parallel [[https://en.wikipedia.org/wiki/Merkle_tree][tree]]-ish hashing termed "leaves stapled to a pole".
+
+This scheme presents a particularly good balance of:
++ Simplicity (Keccak + sponge + hopping)
++ Security (128-bit)
++ Speed (up to ~2bytes/cycle)
+
+It is currently an [[https://datatracker.ietf.org/doc/draft-irtf-cfrg-kangarootwelve/][IETF draft]].
+
+* Usage
+
+#+begin_src @docs
+k12
+#+end_src

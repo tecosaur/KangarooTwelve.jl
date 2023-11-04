@@ -104,6 +104,13 @@ function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVec
     state
 end
 
+"""
+    pad(state::NTuple{25, UInt64}, ::Val{capacity}, lastbyte::UInt, delimsuffix::UInt8)
+
+Perform "padding" of the `lastbyte` byte of `state` with `delimsuffix`.
+
+This is the final modification to `state` in `turboshake`.
+"""
 function pad(state::NTuple{25, UInt64}, ::Val{capacity}, lastbyte::UInt, delimsuffix::UInt8) where {capacity}
     rate = cap2rate(capacity)
     last_uint64 = fld1(lastbyte, sizeof(UInt64))
@@ -114,7 +121,7 @@ function pad(state::NTuple{25, UInt64}, ::Val{capacity}, lastbyte::UInt, delimsu
 end
 
 # For SIMD results
-pad(states::NTuple{25, Vec{N, UInt64}}, capacity, lastbyte::NTuple{N, UInt}, delimsuffix::UInt8) where {N} =
+pad(states::NTuple{25, Vec{N, UInt64}}, capacity::Val, lastbyte::NTuple{N, UInt}, delimsuffix::UInt8) where {N} =
     ntuple(i -> pad(ntuple(k -> states[k][i], Val{25}()), capacity, lastbyte[i], delimsuffix), Val{N}())
 
 """
@@ -187,6 +194,15 @@ end
 
 # Turboshake frontend
 
+"""
+    turboshake(output::Type, message::AbstractVector{<:UInt8to64},
+               delimsuffix::UInt8=0x80, ::Val{capacity} = Val{$CAPACITY}())
+
+Produce an `output` (`Unsigned` or `NTuple{n, <:Unsigned}`) value, by
+performing TurboSHAKE on `message` with a certain `capacity` and `delimsuffix`.
+
+See also: `ingest`, `pad`, `squeeze`.
+"""
 function turboshake(output::Type, # <:Unsigned or NTuple{n, <:Unsigned}
                     message::AbstractVector{<:UInt8to64},
                     delimsuffix::UInt8=0x80, ::Val{capacity} = Val{CAPACITY}()) where {capacity}
