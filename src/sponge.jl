@@ -73,7 +73,7 @@ squeeze!(output::AbstractVector{<:Unsigned}, (; state)::AbstractSponge{rate}) wh
 Ingest `leaf` into `sponge` by transforming it to an `as` via `turboshake`, and
 ingesting that result.
 """
-ingest(sponge::AbstractSponge{rate}, T::Type, leaf::AbstractVector{U}) where {rate, U<:UInt8to64} =
+@inline ingest(sponge::AbstractSponge{rate}, T::Type, leaf::AbstractVector{U}) where {rate, U<:UInt8to64} =
     ingest(sponge, turboshake(T, leaf, K12_SUFFIXES.leaf))
 
 """
