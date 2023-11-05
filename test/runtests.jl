@@ -2,8 +2,8 @@ using KangarooTwelve
 using Test
 
 import KangarooTwelve: keccak_p1600, ingest, pad, squeeze, squeeze!,
-    turboshake, Sponge, ByteSponge, ingest_length, k12_singlethreaded, k12,
-    ntupleinterpret, uinterpret
+    turboshake, Sponge, ByteSponge, ingest_length, ntupleinterpret, uinterpret,
+    k12_singlethreaded, k12_singlethreaded_simd, k12_multithreaded, k12
 
 @testset "keccak" begin
     keccak_1600_init =
@@ -69,6 +69,7 @@ end
     end
     @test sum(sponge.state) == 0x3568ace824579ba2
     @test ingest(sponge, 0x1111111111111111).state[1] == 0x070513f3bdbfaa6f
+    @test ingest(sponge, (0x11111111, 0x11111111)).state[1] == 0x070513f3bdbfaa6f
     @test_broken ingest(ingest(sponge, 0x22222222), 0x1111111111111111).state[1] == 0x0000000011111111
 end
 
@@ -86,6 +87,7 @@ end
     @test uinterpret(UInt128, squeeze(NTuple{16, UInt8}, sponge)) == 0x100f0e0d0c0b0a090807060504030201
     # Wrap around
     @test squeeze(NTuple{22, UInt64}, sponge)[end] == first(keccak_p1600(sponge.state))
+    @test reinterpret(UInt64, squeeze!(Vector{UInt32}(undef, 20), sponge))[10] == sponge.state[10]
     @test squeeze!(Vector{UInt64}(undef, 1000), sponge)[22] == first(keccak_p1600(sponge.state))
 end
 
@@ -94,6 +96,10 @@ end
     @test ingest_length(ByteSponge{21}(), UInt(12)).state[1] == 0x000000000000010c
     @test ingest_length(ByteSponge{21}(), UInt(65538)).state[1] == 0x0000000003020001
 end
+
+# *Note on corectness tests for TurboSHAKE and K12*
+# All test values were extracted by running the python reference
+# implementation on the test values, and extracting the results.
 
 bitpattern(num::Int) =
     Iterators.take(Iterators.cycle(0x00:0xfa), num) |> collect
@@ -167,4 +173,58 @@ end
     @test k12_singlethreaded(bitpattern(17^4), UInt8[]) == 0x5cbb5c5505da4dff455320225e040187
     @test k12_singlethreaded(bitpattern(17^5), UInt8[]) == 0x5cb0b6e35aebbd3c96b9b13309614d84
     @test k12_singlethreaded(bitpattern(17^6), UInt8[]) == 0x32f1aafe727f36a69fe8a4a88207393c
+    # Threshold sizes
+    @test k12_singlethreaded(bitpattern(8191), UInt8[]) == 0x748359a6d6c70c993e6423f73676571b
+    @test k12_singlethreaded(bitpattern(8192), UInt8[]) == 0x93dc92ec61b6a8b6df9e2f77f656f248
+    @test k12_singlethreaded(bitpattern(8193), UInt8[]) == 0x854413ee95528d417951eaea72fe66bb
+    # Customisation
+    @test k12_singlethreaded(bitpattern(17^2), [0x01, 0x02, 0x03]) == 0xd5ddf1091698407cd773500c93944629
+end
+
+@testset "k12 (singlethreaded IO)" begin
+    @test k12_singlethreaded(IOBuffer(UInt8[]), UInt8[]) == 0x51371bcabfa79dd105423bfc50d4c21a
+    @test k12_singlethreaded(IOBuffer(bitpattern(17^1)), UInt8[]) == 0x9be1f87864e37247db989123a25ff76b
+    @test k12_singlethreaded(IOBuffer(bitpattern(17^2)), UInt8[]) == 0xd125b78fcf7dde2614f6dbdebc5e310c
+    @test k12_singlethreaded(IOBuffer(bitpattern(17^3)), UInt8[]) == 0x77df7d458b571d7010997dc72e2e55cb
+    @test k12_singlethreaded(IOBuffer(bitpattern(17^4)), UInt8[]) == 0x5cbb5c5505da4dff455320225e040187
+    @test k12_singlethreaded(IOBuffer(bitpattern(17^5)), UInt8[]) == 0x5cb0b6e35aebbd3c96b9b13309614d84
+    @test k12_singlethreaded(IOBuffer(bitpattern(17^6)), UInt8[]) == 0x32f1aafe727f36a69fe8a4a88207393c
+    # Threshold sizes
+    @test k12_singlethreaded(IOBuffer(bitpattern(8191)), UInt8[]) == 0x748359a6d6c70c993e6423f73676571b
+    @test k12_singlethreaded(IOBuffer(bitpattern(8192)), UInt8[]) == 0x93dc92ec61b6a8b6df9e2f77f656f248
+    @test k12_singlethreaded(IOBuffer(bitpattern(8193)), UInt8[]) == 0x854413ee95528d417951eaea72fe66bb
+    # Customisation
+    @test k12_singlethreaded(IOBuffer(bitpattern(17^2)), [0x01, 0x02, 0x03]) == 0xd5ddf1091698407cd773500c93944629
+end
+
+@testset "k12 (SIMD)" begin
+    @test k12_singlethreaded_simd(UInt8[], UInt8[]) == 0x51371bcabfa79dd105423bfc50d4c21a
+    @test k12_singlethreaded_simd(bitpattern(17^1), UInt8[]) == 0x9be1f87864e37247db989123a25ff76b
+    @test k12_singlethreaded_simd(bitpattern(17^2), UInt8[]) == 0xd125b78fcf7dde2614f6dbdebc5e310c
+    @test k12_singlethreaded_simd(bitpattern(17^3), UInt8[]) == 0x77df7d458b571d7010997dc72e2e55cb
+    @test k12_singlethreaded_simd(bitpattern(17^4), UInt8[]) == 0x5cbb5c5505da4dff455320225e040187
+    @test k12_singlethreaded_simd(bitpattern(17^5), UInt8[]) == 0x5cb0b6e35aebbd3c96b9b13309614d84
+    @test k12_singlethreaded_simd(bitpattern(17^6), UInt8[]) == 0x32f1aafe727f36a69fe8a4a88207393c
+    # Threshold sizes
+    @test k12_singlethreaded_simd(bitpattern(8191), UInt8[]) == 0x748359a6d6c70c993e6423f73676571b
+    @test k12_singlethreaded_simd(bitpattern(8192), UInt8[]) == 0x93dc92ec61b6a8b6df9e2f77f656f248
+    @test k12_singlethreaded_simd(bitpattern(8193), UInt8[]) == 0x854413ee95528d417951eaea72fe66bb
+    # Customisation
+    @test k12_singlethreaded_simd(bitpattern(17^2), [0x01, 0x02, 0x03]) == 0xd5ddf1091698407cd773500c93944629
+end
+
+@testset "k12 (multithreaded)" begin
+    @test k12_multithreaded(UInt8[], UInt8[]) == 0x51371bcabfa79dd105423bfc50d4c21a
+    @test k12_multithreaded(bitpattern(17^1), UInt8[]) == 0x9be1f87864e37247db989123a25ff76b
+    @test k12_multithreaded(bitpattern(17^2), UInt8[]) == 0xd125b78fcf7dde2614f6dbdebc5e310c
+    @test k12_multithreaded(bitpattern(17^3), UInt8[]) == 0x77df7d458b571d7010997dc72e2e55cb
+    @test k12_multithreaded(bitpattern(17^4), UInt8[]) == 0x5cbb5c5505da4dff455320225e040187
+    @test k12_multithreaded(bitpattern(17^5), UInt8[]) == 0x5cb0b6e35aebbd3c96b9b13309614d84
+    @test k12_multithreaded(bitpattern(17^6), UInt8[]) == 0x32f1aafe727f36a69fe8a4a88207393c
+    # Threshold sizes
+    @test k12_multithreaded(bitpattern(8191), UInt8[]) == 0x748359a6d6c70c993e6423f73676571b
+    @test k12_multithreaded(bitpattern(8192), UInt8[]) == 0x93dc92ec61b6a8b6df9e2f77f656f248
+    @test k12_multithreaded(bitpattern(8193), UInt8[]) == 0x854413ee95528d417951eaea72fe66bb
+    # Customisation
+    @test k12_multithreaded(bitpattern(17^2), [0x01, 0x02, 0x03]) == 0xd5ddf1091698407cd773500c93944629
 end

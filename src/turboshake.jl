@@ -3,11 +3,14 @@
 cap2rate(capacity::Integer) = 25 - capacity ÷ 64
 rate2cap(rate::Integer) = (25 - rate) * 64
 
+# Because `reinterpret(NTuple{...}, x)` and friends only works on 1.10+
 @static if VERSION >= v"1.10-beta"
     ntupleinterpret(::Type{T}, x::U) where {T<:Unsigned, U<:Unsigned} =
         reinterpret(NTuple{sizeof(U) ÷ sizeof(T), T}, x)
     ntupleinterpret(::Type{T}, x::NTuple{N, U}) where {T<:Unsigned, N, U<:Unsigned} =
         reinterpret(NTuple{N * sizeof(U) ÷ sizeof(T), T}, x)
+    ntupleinterpret(::Type{T}, x::NTuple{N, NTuple{M, T}}) where {T<:Unsigned, N, M} =
+        reinterpret(NTuple{N * M, T}, x)
     uinterpret(::Type{T}, x::Union{U, NTuple{N, U}}) where {T<:Unsigned, N, U<:Unsigned} =
         reinterpret(T, x)
 else
@@ -23,6 +26,9 @@ else
                 Expr(:call, :+, ntuple(j -> :((x[$(sizeof(T) ÷ sizeof(U) * (i-1) + j)] % $T) << $(8 * sizeof(U) * (j-1))), sizeof(T) ÷ sizeof(U))...),
                                 (N * sizeof(U)) ÷ sizeof(T))...)
         end
+    end
+    @generated function ntupleinterpret(::Type{T}, x::NTuple{N, NTuple{M, T}}) where {T<:Unsigned, N, M}
+        Expr(:tuple, ntuple(i -> :(x[$(fld1(i, M))][$(mod1(i, M))]), N * M)...)
     end
     uinterpret(::Type{T}, x::Union{U, NTuple{N, U}}) where {T<:Unsigned, N, U<:Unsigned} =
         first(ntupleinterpret(T, x))

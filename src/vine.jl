@@ -142,7 +142,7 @@ function finalise((; trunk, leaf, nbytes)::AbstractVine{rate}) where {rate}
         trunk = ingest(trunk, cv)
     end
     sponge = convert(ByteSponge, trunk)
-    if nbytes < BLOCK_SIZE
+    if nbytes <= BLOCK_SIZE
         pad(sponge, K12_SUFFIXES.one)
     else
         sponge = ingest_length(sponge, nbytes ÷ BLOCK_SIZE)

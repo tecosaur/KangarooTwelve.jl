@@ -27,7 +27,7 @@ function k12_singlethreaded_simd(message::AbstractVector{U}, customisation::Abst
         blocks = ntuple(i -> reinterpret(UInt64, view(message, simd_start+(i-1)*bsize:simd_start+i*bsize-1)),
                         Val{SIMD_FACTOR}())
         u64x4x4 = turboshake(NTuple{4, UInt64}, blocks, K12_SUFFIXES.leaf)
-        trunk = ingest(vine.trunk, reinterpret(NTuple{16, UInt64}, u64x4x4))
+        trunk = ingest(vine.trunk, ntupleinterpret(UInt64, u64x4x4))
         vine = Vine(trunk, vine.leaf, vine.nbytes + BLOCK_SIZE * SIMD_FACTOR)
     end
     vine = ingest(vine, view(message, slices.tail))
