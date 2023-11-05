@@ -16,11 +16,15 @@ for orgfile in orgfiles
         m -> write(mdfile, m)
 end
 
+cp(joinpath(@__DIR__, "benchmark", "scaling-benchmark.svg"),
+   joinpath(@__DIR__, "src", "scaling-benchmark.svg"))
+
 makedocs(;
     modules=[KangarooTwelve],
     format=Documenter.HTML(),
     pages=[
         "KangarooTwelve" => "index.md",
+        "Benchmark" => "benchmark.md",
         "Internals" => "internals.md",
     ],
     repo="https://github.com/tecosaur/KangarooTwelve.jl/blob/{commit}{path}#L{line}",

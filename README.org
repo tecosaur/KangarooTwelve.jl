@@ -12,6 +12,16 @@ This scheme presents a particularly good balance of:
 
 It is currently an [[https://datatracker.ietf.org/doc/draft-irtf-cfrg-kangarootwelve/][IETF draft]].
 
+* Usage
+
+#+begin_src julia
+k12(data)
+#+end_src
+
+* Benchmark
+
+[[file:docs/benchmark/scaling-benchmark.svg]]
+
 * The Keccak-p permutation
 
 There are some lovely figures elucidating the Keccak algorithm in [[https://keccak.team/files/Keccak-reference-3.0.pdf][the reference]],
