@@ -23,6 +23,8 @@ using Base.Threads
 using SIMD
 using Mmap
 
+using PrecompileTools
+
 # See <https://www.fress.io/story/k12>
 # For SIMD oppotunities, see <https://docs.rs/keccak/latest/src/keccak/lib.rs.html>.
 # With native code, <https://lists.gnupg.org/pipermail/gcrypt-devel/2022-July/005360.html>
@@ -53,5 +55,7 @@ include("turboshake.jl")
 include("sponge.jl")
 include("vine.jl")
 include("k12.jl")
+
+include("precompile.jl")
 
 end
