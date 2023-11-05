@@ -21,17 +21,17 @@ KangarooTwelve.ByteSponge
 KangarooTwelve.AbstractCoralVine
 KangarooTwelve.CoralVineSeedling
 KangarooTwelve.CoralVine
-KangarooTwelve.ingest_length
+KangarooTwelve.absorb_length
 KangarooTwelve.finalise
 #+end_src
 
 * State operations
 
-The =ingest=, =pad=, =squeeze=, and =squeeze!= are implemented for state tuples,
+The =absorb=, =pad=, =squeeze=, and =squeeze!= are implemented for state tuples,
 sponges, and vines.
 
 #+begin_src @docs
-KangarooTwelve.ingest
+KangarooTwelve.absorb
 KangarooTwelve.pad
 KangarooTwelve.squeeze
 KangarooTwelve.squeeze!
