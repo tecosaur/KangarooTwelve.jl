@@ -51,7 +51,7 @@ A `vine` that hasn't started to grow leaves yet (see the [`AbstractCoralVine`](@
 ╰─────────╯
 ```
 
-See also: [`CoralVine`](@ref), `absorb`, `absorb_length`, `finalise`.
+See also: [`CoralVine`](@ref), [`absorb`](@ref), [`absorb_length`](@ref), and [`finalise`](@ref).
 """
 struct CoralVineSeedling{rate} <: AbstractCoralVine{rate}
     trunk::ByteSponge{rate}
@@ -74,7 +74,7 @@ A `vine` with leaves (see the [`k12`](@ref) docstring).
 ╰─────────╯  □       □
 ```
 
-See also: [`CoralVineSeedling`](@ref), `absorb`, `absorb_length`, `finalise`.
+See also: [`CoralVineSeedling`](@ref), [`absorb`](@ref), [`absorb_length`](@ref), and [`finalise`](@ref).
 """
 struct CoralVine{rate} <: AbstractCoralVine{rate}
     trunk::Sponge{rate}

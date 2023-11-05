@@ -48,7 +48,7 @@ A Keccak state that keeps track of the last *lane* updated.
 
 For more information on the sponge construction see [`AbstractSponge`](@ref).
 
-See also: `absorb`, `pad`, and `squeeze`.
+See also: [`absorb`](@ref), [`pad`](@ref), and [`squeeze`](@ref).
 """
 struct Sponge{rate} <: AbstractSponge{rate}
     state::NTuple{25, UInt64}
@@ -140,7 +140,7 @@ A Keccak state that keeps track of the last *byte* updated.
 
 For more information on the sponge construction see [`AbstractSponge`](@ref).
 
-See also: `absorb`, `pad`, and `squeeze`.
+See also: [`absorb`](@ref), [`pad`](@ref), and [`squeeze`](@ref).
 """
 struct ByteSponge{rate} <: AbstractSponge{rate}
     state::NTuple{25, UInt64}

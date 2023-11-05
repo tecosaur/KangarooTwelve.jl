@@ -39,7 +39,7 @@ end
 """
     absorb(state::NTuple{25, UInt64}, block::NTuple{rate, UInt64})
 
-Ingest a single `block` of input (with implied `rate`) into `state` or `sponge`.
+Ingest a single `block` of input (with implied `rate`) into `state`.
 
 The first `rate` elements of the state are `xor`'d `block`, and then the state
 is permuted with `keccak_p1600`.
@@ -115,7 +115,7 @@ end
 
 Perform "padding" of the `lastbyte` byte of `state` with `delimsuffix`.
 
-This is the final modification to `state` in `turboshake`.
+This is the final modification to `state` in [`turboshake`](@ref).
 """
 function pad(state::NTuple{25, UInt64}, ::Val{capacity}, lastbyte::UInt, delimsuffix::UInt8) where {capacity}
     rate = cap2rate(capacity)
@@ -207,7 +207,7 @@ end
 Produce an `output` (`Unsigned` or `NTuple{n, <:Unsigned}`) value, by
 performing TurboSHAKE on `message` with a certain `capacity` and `delimsuffix`.
 
-See also: `absorb`, `pad`, `squeeze`.
+See also: [`absorb`](@ref), [`pad`](@ref), and [`squeeze`](@ref).
 """
 function turboshake(output::Type, # <:Unsigned or NTuple{n, <:Unsigned}
                     message::AbstractVector{<:UInt8to64},
