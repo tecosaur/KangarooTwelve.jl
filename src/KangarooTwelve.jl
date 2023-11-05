@@ -54,6 +54,4 @@ include("sponge.jl")
 include("vine.jl")
 include("k12.jl")
 
-include("throughput.jl")
-
 end
