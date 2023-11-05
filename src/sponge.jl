@@ -1,12 +1,52 @@
 # Most of the time, we'll be dealing with UInt64s,
 # so it makes sense to specialise `Sponge` on that.
 
+"""
+    AbstractSponge
+
+A sponge is a generalisation of hash functions and stream ciphers. It is in
+essance an iterated construction of a variable-input variable-output function
+based on a fixed length permutation and an internal state.
+
+The way the sponge operates can be illustrated well with a diagram following the
+state.
+
+```text
+ Message (padded)
+  └───┬──────┬──────┬──────┐      ┊ ┌──────┬──────┬───▶ Output
+      │      │      │      │      ┊ │      │      │
+ ┌─┐  │  ╭─╮ │  ╭─╮ │  ╭─╮ │  ╭─╮ ┆ │  ╭─╮ │  ╭─╮ │
+ │ │  ▼  │ │ ▼  │ │ ▼  │ │ ▼  │ │ ┆ │  │ │ │  │ │ │
+r│0├──⨁─▶│ ├─⨁─▶│ ├─⨁─▶│ ├─⨁─▶│ ├─┼─┴─▶│ ├─┴─▶│ ├─┴─▶ ╍
+ │ │     │f│    │f│    │f│    │f│ ┆    │f│    │f│
+ ├─┤     │ │    │ │    │ │    │ │ ┆    │ │    │ │
+c│0├────▶│ ├───▶│ ├───▶│ ├───▶│ ├─┼───▶│ ├───▶│ ├───▶ ╍
+ └─┘     ╰─╯    ╰─╯    ╰─╯    ╰─╯ ┆    ╰─╯    ╰─╯
+                        Absorbing ┆ Squeezing
+```
+
+First, the input is padded with a reversible padding rule and the state is
+initialised to zero.
+- In the absorbing phase, the input is processed in blocks of `r` bits, and xor'd with
+  the first `r` bits of the state (leaving the remaining `c` bits unchanged), with
+  absorptions interlieved with applications of the function `f`.
+- In the squeezing phase, the first `r` bits of the state are returned as the output.
+  Shoult more output be wanted, `f` can simply be applied to the state again.
+
+While this construction is defined for any fixed-length permutation `f`, however
+we specialise on [`keccak_p1600`](@ref).
+
+It is possible to either incrementally either one lane at a time, or one byte at
+a time. To handle these two cases we have the [`Sponge`](@ref) and [`ByteSponge`](@ref) subtypes.
+"""
 abstract type AbstractSponge{rate} end
 
 """
     Sponge{rate}
 
 A Keccak state that keeps track of the last *lane* updated.
+
+For more information on the sponge construction see [`AbstractSponge`](@ref).
 
 See also: `ingest`, `pad`, and `squeeze`.
 """
@@ -97,6 +137,8 @@ end
     ByteSponge{rate}
 
 A Keccak state that keeps track of the last *byte* updated.
+
+For more information on the sponge construction see [`AbstractSponge`](@ref).
 
 See also: `ingest`, `pad`, and `squeeze`.
 """

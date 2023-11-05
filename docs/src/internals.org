@@ -15,6 +15,7 @@ KangarooTwelve.turboshake
 * Sponge & Vine
 
 #+begin_src @docs
+KangarooTwelve.AbstractSponge
 KangarooTwelve.Sponge
 KangarooTwelve.ByteSponge
 KangarooTwelve.GerminatingVine
