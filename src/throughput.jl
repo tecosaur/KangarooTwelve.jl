@@ -52,7 +52,10 @@ throughput(::typeof(turboshake), size; simd::Int=1) =
     throughput(UInt64, m -> turboshake(UInt128, m), size, "TurboSHAKE-128"; simd)
 
 throughput(::typeof(k12_singlethreaded), size) =
-    throughput(UInt64, k12_singlethreaded, size, "KangarooTwelve (singlethreaded)")
+    throughput(UInt64, Base.Fix2(k12_singlethreaded, UInt8[]), size, "KangarooTwelve (singlethreaded)")
+
+throughput(::typeof(k12_multithreaded), size) =
+    throughput(UInt64, Base.Fix2(k12_multithreaded, UInt8[]), size, "KangarooTwelve (singlethreaded)")
 
 function throughput(::Val{:trunk_ingest}, ::Type{U}, size) where {U <: Unsigned}
     function trunk_u(vals::Vector{U})
@@ -146,6 +149,8 @@ function throughput(alg::Symbol, size=9; simd::Int=1) # 4 = 1KiB, 6 = 32KiB, 8 =
         turboshake
     elseif alg == :k12_singlethread
         k12_singlethreaded
+    elseif alg == :k12_multithread
+        k12_multithreaded
     elseif alg == :k12
         k12
     elseif alg ∈ (:trunk_u8, :trunk_u16, :trunk_u32, :trunk_u64)

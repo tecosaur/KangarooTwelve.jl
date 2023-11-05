@@ -23,7 +23,7 @@ function k12_singlethreaded_simd(message::AbstractVector{U}, customisation::Abst
     slices = slice_message(U, length(message), Val{SIMD_FACTOR}())
     vine = ingest(GerminatingVine{RATE}(), view(message, slices.init))::Vine{RATE}
     bsize = BLOCK_SIZE÷sizeof(U)
-    for simd_start in slices.simd
+    for simd_start in slices.blocks
         blocks = ntuple(i -> reinterpret(UInt64, view(message, simd_start+(i-1)*bsize:simd_start+i*bsize-1)),
                         Val{SIMD_FACTOR}())
         u64x4x4 = turboshake(NTuple{4, UInt64}, blocks, K12_SUFFIXES.leaf)
@@ -36,25 +36,42 @@ function k12_singlethreaded_simd(message::AbstractVector{U}, customisation::Abst
     squeeze(UInt128, finalise(vine))
 end
 
-function slice_message(U::Type, mlen::Int, ::Val{simd_factor}) where {simd_factor}
+function slice_message(U::Type, mlen::Int, ::Val{block_multiple}) where {block_multiple}
     u_block_size = BLOCK_SIZE÷sizeof(U)
-    simd_block_size = simd_factor * u_block_size
+    m_block_size = block_multiple * u_block_size
     init = if mlen >= u_block_size 1:min(mlen, u_block_size) else 1:0 end
-    simd_end = if simd_factor > 0
-        ((mlen - u_block_size) ÷ simd_block_size) * simd_block_size + last(init)
+    blocks_end = if block_multiple > 0
+        ((mlen - u_block_size) ÷ m_block_size) * m_block_size + last(init)
     else last(init) end
-    simd = last(init)+1:simd_block_size:simd_end-simd_block_size+1
-    tail = simd_end+1:mlen
-    (; init, simd, tail)
+    blocks = last(init)+1:m_block_size:blocks_end-m_block_size+1
+    tail = blocks_end+1:mlen
+    (; init, blocks, tail)
 end
 
-# TODO: Better multithreaded implementation + heuristic
-function k12_multithreaded(message::AbstractVector{U}) where {U <: UInt8to64}
-    chunks = partition(message, SIMD_FACTOR * BLOCK_SIZE÷sizeof(U))
-    tasks = map(chunks) do chunk
-        @spawn turboshake(UInt32, chunk, K12_SUFFIXES.leaf)
+function k12_multithreaded(message::AbstractVector{U}, customisation::AbstractVector{<:UInt8to64}) where {U<:UInt8to64}
+    if length(message) <= BLOCK_SIZE÷sizeof(U)
+        return k12_singlethreaded(message, customisation)
     end
-    map(fetch, tasks)
+    slices = slice_message(U, length(message), Val{1}())
+    blocks = [reinterpret(UInt64, view(message, bstart:bstart-1+BLOCK_SIZE÷sizeof(U)))
+              for bstart in slices.blocks]
+    cvs = Vector{UInt64}(undef, 4 * length(blocks))
+    @threads for i in 1:length(blocks)
+        block = blocks[i]
+        cv = turboshake(NTuple{4, UInt64}, block, K12_SUFFIXES.leaf)
+        for j in 1:4
+            cvs[4(i-1)+j] = cv[j]
+        end
+    end
+    vine = ingest(GerminatingVine{RATE}(), view(message, slices.init))
+    for cv in cvs
+        trunk = ingest(vine.trunk, cv)
+        vine = Vine(trunk, vine.leaf, vine.nbytes + BLOCK_SIZE ÷ 4)
+    end
+    vine = ingest(vine, view(message, slices.tail))
+    vine = ingest(vine, customisation)
+    vine = ingest_length(vine, customisation)
+    squeeze(UInt128, finalise(vine))
 end
 
 """
