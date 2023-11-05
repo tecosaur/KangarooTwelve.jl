@@ -40,9 +40,7 @@ function slice_message(U::Type, mlen::Int, ::Val{block_multiple}) where {block_m
     u_block_size = BLOCK_SIZE÷sizeof(U)
     m_block_size = block_multiple * u_block_size
     init = if mlen >= u_block_size 1:min(mlen, u_block_size) else 1:0 end
-    blocks_end = if block_multiple > 0
-        ((mlen - u_block_size) ÷ m_block_size) * m_block_size + last(init)
-    else last(init) end
+    blocks_end = ((mlen - u_block_size) ÷ m_block_size) * m_block_size + last(init)
     blocks = last(init)+1:m_block_size:blocks_end-m_block_size+1
     tail = blocks_end+1:mlen
     (; init, blocks, tail)
@@ -63,7 +61,7 @@ function k12_multithreaded(message::AbstractVector{U}, customisation::AbstractVe
             cvs[4(i-1)+j] = cv[j]
         end
     end
-    vine = ingest(GerminatingVine{RATE}(), view(message, slices.init))
+    vine = ingest(GerminatingVine{RATE}(), view(message, slices.init))::Vine{RATE}
     for cv in cvs
         trunk = ingest(vine.trunk, cv)
         vine = Vine(trunk, vine.leaf, vine.nbytes + BLOCK_SIZE ÷ 4)
@@ -75,9 +73,12 @@ function k12_multithreaded(message::AbstractVector{U}, customisation::AbstractVe
 end
 
 """
-    k12(data::Union{IO, String, AbstractVector{Unsigned}}) -> UInt128
+    k12(data::Union{IO, String, AbstractVector{<:Unsigned}},
+        customisation::Union{String, AbstractVector{<:Unsigned}};
+        thread::Bool=true) -> UInt128
 
-Hash `data` with the KangarooTwelve scheme.
+Hash `data` with the KangarooTwelve scheme and a `customisation` value, using
+multithreading when `thread` is `true`.
 
 This scheme presents a good balance of *Simplicity*, *Security*, and *Speed*.
 
@@ -103,22 +104,26 @@ This scheme has been described as "leaves on a vine". The hashing of blocks
 ``S₁`` to ``Sₙ₋₁`` is embarassingly parallel, and can be accelerated with both
 SIMD and multithreading.
 """
-function k12(data::AbstractVector{<:Unsigned}, customisation::AbstractVector{<:Unsigned}=UInt8[])
-    if true # length(data) < heuristic
-        k12_singlethreaded(data, customisation)
+function k12(data::AbstractVector{<:Unsigned}, customisation::AbstractVector{<:Unsigned}=UInt8[]; thread::Bool=true)
+    if thread
+        k12_multithreaded(data, customisation)
     else
-        k12_multithreaded(data)
+        k12_singlethreaded(data, customisation)
     end
 end
 
-function k12(data::IO)
+function k12(data::IO, customisation::AbstractVector{<:Unsigned}=UInt8[]; thread::Bool=true)
+    thread || return k12_singlethreaded(data, customisation)
     try
         buf = Mmap.mmap(data)
-        k12(data)
+        k12(buf, customisation)
     catch _
-        k12_multithreaded(data)
+        k12_singlethreaded(data, customisation)
     end
 end
 
-k12(s::String) = k12(codeunits(s))
-k12(s::AbstractString) = k12(String(s))
+k12(s::AbstractString, customisation::AbstractVector{<:Unsigned}=UInt8[]; thread::Bool=true) =
+    k12(codeunits(String(s)), customisation; thread)
+
+k12(data::Union{<:AbstractVector{<:Unsigned}, <:IO, <:AbstractString}, customisation::AbstractString) =
+    k12(data, codeunits(String(customisation)))

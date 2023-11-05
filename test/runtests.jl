@@ -228,3 +228,14 @@ end
     # Customisation
     @test k12_multithreaded(bitpattern(17^2), [0x01, 0x02, 0x03]) == 0xd5ddf1091698407cd773500c93944629
 end
+
+@testset "k12 (entrypoint)" begin
+    @test k12(UInt8[0x61]) == 0x127fe10dabd37226d158e632536bad9e
+    @test k12(UInt8[], UInt8[0x61]) == 0xa381de50bbb72362f91d547c744af984
+    @test k12("a") == 0x127fe10dabd37226d158e632536bad9e
+    @test k12("a", UInt8[]) == 0x127fe10dabd37226d158e632536bad9e
+    @test k12(UInt8[], "a") == 0xa381de50bbb72362f91d547c744af984
+    @test k12("", "") == 0x51371bcabfa79dd105423bfc50d4c21a
+    @test k12(IOBuffer([0x61])) == 0x127fe10dabd37226d158e632536bad9e
+    @test k12(IOBuffer(), [0x61]) == 0xa381de50bbb72362f91d547c744af984
+end
