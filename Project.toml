@@ -1,7 +1,7 @@
 name = "KangarooTwelve"
 uuid = "2a5dabf5-6a39-42aa-818d-ce8a58d1b312"
 authors = ["TEC <git@tecosaur.net>"]
-version = "0.1.0"
+version = "1.0.0"
 
 [deps]
 Mmap = "a63ad114-7e13-5084-954f-fe012c677804"
