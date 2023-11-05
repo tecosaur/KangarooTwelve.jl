@@ -1,0 +1,22 @@
+#+title: Benchmark
+
+The single-threaded and multi-threaded variants of KangarooTwelve from this
+package are compared against:
++ =crc32c= from the =CRC32c= standard library
++ =sha256sum= from the =SHA= standard library
++ =md5= from [[https://github.com/JuliaCrypto/MD5.jl][MD5.jl]]
++ blake3 from [[https://github.com/pixel27/Blake3Hash.jl][Blake3Hash.jl]]
+
+[[file:scaling-benchmark.svg]]
+
+*System information*
+
++ Intel i5-13600k
++ Linux 6.6 (openSUSE)
+
+*Version Information*
+
++ Julia 1.10-rc1
++ SHA v0.7.0
++ MD5 v0.2.2
++ Blake3Hash v0.3.0

@@ -1,0 +1,38 @@
+#+title: Internals
+
+* Keccak
+
+#+begin_src @docs
+KangarooTwelve.keccak_p1600
+#+end_src
+
+* Turboshake
+
+#+begin_src @docs
+KangarooTwelve.turboshake
+#+end_src
+
+* Sponge & Vine
+
+#+begin_src @docs
+KangarooTwelve.AbstractSponge
+KangarooTwelve.Sponge
+KangarooTwelve.ByteSponge
+KangarooTwelve.AbstractCoralVine
+KangarooTwelve.CoralVineSeedling
+KangarooTwelve.CoralVine
+KangarooTwelve.absorb_length
+KangarooTwelve.finalise
+#+end_src
+
+* State operations
+
+The =absorb=, =pad=, =squeeze=, and =squeeze!= are implemented for state tuples,
+sponges, and vines.
+
+#+begin_src @docs
+KangarooTwelve.absorb
+KangarooTwelve.pad
+KangarooTwelve.squeeze
+KangarooTwelve.squeeze!
+#+end_src
