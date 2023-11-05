@@ -1,6 +1,11 @@
 #+title: KangarooTwelve
 #+author: tecosaur
 
+#+html: <a href="https://tecosaur.github.io/KangarooTwelve.jl/stable/"><img src="https://img.shields.io/badge/docs-stable-blue.svg"></a>
+#+html: <a href="https://tecosaur.github.io/KangarooTwelve.jl/dev/"><img src="https://img.shields.io/badge/docs-dev-blue.svg"></a>
+#+html: <a href="https://github.com/tecosaur/KangarooTwelve.jl/actions?query=workflow%3ACI"><img src="https://github.com/tecosaur/KangarooTwelve.jl/workflows/CI/badge.svg"></a>
+#+html: <a href="https://coveralls.io/github/tecosaur/KangarooTwelve.jl"><img src="https://coveralls.io/repos/github/tecosaur/KangarooTwelve.jl/badge.svg"></a>
+
 A pure-Julia implementation of the [[https://keccak.team/kangarootwelve.html][KangarooTwelve]] hashing scheme, so named
 because it consists of 12 rounds of [[https://keccak.team/keccak.html][Keccak]] ([[https://keccak.team/turboshake.html][TurboSHAKE]]128) with kangaroo
 hopping, allowing for parallel [[https://en.wikipedia.org/wiki/Merkle_tree][tree]]-ish hashing termed "leaves stapled to a pole".
@@ -15,7 +20,7 @@ It is currently an [[https://datatracker.ietf.org/doc/draft-irtf-cfrg-kangarootw
 * Usage
 
 #+begin_src julia
-k12(data)
+k12(data, [customisation]; thread=true)
 #+end_src
 
 * Benchmark
