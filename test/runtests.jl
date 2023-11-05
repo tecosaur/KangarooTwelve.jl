@@ -1,8 +1,8 @@
 using KangarooTwelve
 using Test
 
-import KangarooTwelve: keccak_p1600, ingest, pad, squeeze, squeeze!,
-    turboshake, Sponge, ByteSponge, ingest_length, ntupleinterpret, uinterpret,
+import KangarooTwelve: keccak_p1600, absorb, pad, squeeze, squeeze!,
+    turboshake, Sponge, ByteSponge, absorb_length, ntupleinterpret, uinterpret,
     k12_singlethreaded, k12_singlethreaded_simd, k12_multithreaded, k12
 
 @testset "keccak" begin
@@ -47,30 +47,30 @@ import KangarooTwelve: keccak_p1600, ingest, pad, squeeze, squeeze!,
     @test keccak_p1600(keccak_1600_init, Val(24)) == keccak_1600_24rounds
 end
 
-@testset "Sponge ingestion" begin
-    sponge = ingest(ByteSponge{21}(), 0x11)
+@testset "Sponge absorbion" begin
+    sponge = absorb(ByteSponge{21}(), 0x11)
     rate = (((::ByteSponge{rate}) where {rate}) -> rate)(sponge)
     @test sponge.state[1] == 0x0000000000000011
-    sponge = ingest(sponge, 0x2222)
+    sponge = absorb(sponge, 0x2222)
     @test sponge.state[1] == 0x0000000000222211
-    sponge = ingest(sponge, 0x33333333)
+    sponge = absorb(sponge, 0x33333333)
     @test sponge.state[1] == 0x0033333333222211
-    sponge = ingest(sponge, 0x4444)
+    sponge = absorb(sponge, 0x4444)
     @test sponge.state[1] == 0x4433333333222211
     @test sponge.state[2] == 0x0000000000000044
-    sponge = ingest(sponge, 0x5555555555555555)
+    sponge = absorb(sponge, 0x5555555555555555)
     @test sponge.state[2] == 0x5555555555555544
     @test sponge.state[3] == 0x0000000000000055
-    sponge = ingest(ingest(ingest(sponge, 0x66), 0x6666), 0x66666666)
+    sponge = absorb(absorb(absorb(sponge, 0x66), 0x6666), 0x66666666)
     @test sponge.state[3] == 0x6666666666666655
     @test sponge.state[4] == 0x0000000000000000
     for _ in 4:rate-1
-        sponge = ingest(sponge, 0x1234567812345678)
+        sponge = absorb(sponge, 0x1234567812345678)
     end
     @test sum(sponge.state) == 0x3568ace824579ba2
-    @test ingest(sponge, 0x1111111111111111).state[1] == 0x070513f3bdbfaa6f
-    @test ingest(sponge, (0x11111111, 0x11111111)).state[1] == 0x070513f3bdbfaa6f
-    @test_broken ingest(ingest(sponge, 0x22222222), 0x1111111111111111).state[1] == 0x0000000011111111
+    @test absorb(sponge, 0x1111111111111111).state[1] == 0x070513f3bdbfaa6f
+    @test absorb(sponge, (0x11111111, 0x11111111)).state[1] == 0x070513f3bdbfaa6f
+    @test_broken absorb(absorb(sponge, 0x22222222), 0x1111111111111111).state[1] == 0x0000000011111111
 end
 
 @testset "Sponge squeezing" begin
@@ -92,9 +92,9 @@ end
 end
 
 @testset "Length encoding" begin
-    @test ingest_length(ByteSponge{21}(), UInt(0)).state[1] == 0x0000000000000000
-    @test ingest_length(ByteSponge{21}(), UInt(12)).state[1] == 0x000000000000010c
-    @test ingest_length(ByteSponge{21}(), UInt(65538)).state[1] == 0x0000000003020001
+    @test absorb_length(ByteSponge{21}(), UInt(0)).state[1] == 0x0000000000000000
+    @test absorb_length(ByteSponge{21}(), UInt(12)).state[1] == 0x000000000000010c
+    @test absorb_length(ByteSponge{21}(), UInt(65538)).state[1] == 0x0000000003020001
 end
 
 # *Note on corectness tests for TurboSHAKE and K12*

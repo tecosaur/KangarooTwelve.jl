@@ -48,7 +48,7 @@ A Keccak state that keeps track of the last *lane* updated.
 
 For more information on the sponge construction see [`AbstractSponge`](@ref).
 
-See also: `ingest`, `pad`, and `squeeze`.
+See also: `absorb`, `pad`, and `squeeze`.
 """
 struct Sponge{rate} <: AbstractSponge{rate}
     state::NTuple{25, UInt64}
@@ -58,7 +58,7 @@ end
 Sponge{rate}() where {rate} = Sponge{rate}(EMPTY_STATE, 1)
 Sponge() = Sponge{RATE}()
 
-function ingest((; state, lane)::Sponge{rate}, newlane::UInt64) where {rate}
+function absorb((; state, lane)::Sponge{rate}, newlane::UInt64) where {rate}
     state = setindex(state, state[lane] ⊻ newlane, lane)
     if lane == rate
         Sponge{rate}(keccak_p1600(state), 1)
@@ -67,9 +67,9 @@ function ingest((; state, lane)::Sponge{rate}, newlane::UInt64) where {rate}
     end
 end
 
-function ingest((; state, lane)::Sponge{rate}, lanes::NTuple{N, UInt64}) where {rate, N}
+function absorb((; state, lane)::Sponge{rate}, lanes::NTuple{N, UInt64}) where {rate, N}
     if rate == N && lane == 1
-        state, lane = ingest(state, lanes), 1
+        state, lane = absorb(state, lanes), 1
     elseif lane + N <= rate
         state = @ntuple 25 i -> if lane <= i < lane + N
             state[i] ⊻ lanes[i - lane + 1]
@@ -105,30 +105,30 @@ squeeze!(output::AbstractVector{<:Unsigned}, (; state)::AbstractSponge{rate}) wh
     squeeze!(output, state, Val{rate2cap(rate)}())
 
 """
-    ingest(sponge::AbstractSponge, as::Type{<:Unsigned}, leaf::AbstractVector{<:Unsigned})
+    absorb(sponge::AbstractSponge, as::Type{<:Unsigned}, leaf::AbstractVector{<:Unsigned})
 
 Ingest `leaf` into `sponge` by transforming it to an `as` via `turboshake`, and
-ingesting that result.
+absorbing that result.
 """
-@inline ingest(sponge::AbstractSponge{rate}, T::Type, leaf::AbstractVector{U}) where {rate, U<:UInt8to64} =
-    ingest(sponge, turboshake(T, leaf, K12_SUFFIXES.leaf))
+@inline absorb(sponge::AbstractSponge{rate}, T::Type, leaf::AbstractVector{U}) where {rate, U<:UInt8to64} =
+    absorb(sponge, turboshake(T, leaf, K12_SUFFIXES.leaf))
 
 """
-    ingest(sponge::AbstractSponge, block::AbstractVector{<:Unsigned})
+    absorb(sponge::AbstractSponge, block::AbstractVector{<:Unsigned})
 
 Ingest each element of `block` into `sponge`.
 """
-function ingest(sponge::AbstractSponge, block::AbstractVector{U}) where {U <: UInt8to64}
+function absorb(sponge::AbstractSponge, block::AbstractVector{U}) where {U <: UInt8to64}
     # REVIEW optimize? This is just a quick hack
     for b in block
-        sponge = ingest(sponge, b)
+        sponge = absorb(sponge, b)
     end
     sponge
 end
 
-# ingest(sponge::Sponge, x::Unsigned, xs::Unsigned...) = ingest(ingest(sponge, x), xs...)
+# absorb(sponge::Sponge, x::Unsigned, xs::Unsigned...) = absorb(absorb(sponge, x), xs...)
 
-# At the very end of KangarooTwelve, we want to ingest
+# At the very end of KangarooTwelve, we want to absorb
 # sub-UInt64 values. For this more limited capability,
 # we need a second sponge type that can absorb single
 # bytes of data.
@@ -140,7 +140,7 @@ A Keccak state that keeps track of the last *byte* updated.
 
 For more information on the sponge construction see [`AbstractSponge`](@ref).
 
-See also: `ingest`, `pad`, and `squeeze`.
+See also: `absorb`, `pad`, and `squeeze`.
 """
 struct ByteSponge{rate} <: AbstractSponge{rate}
     state::NTuple{25, UInt64}
@@ -177,11 +177,11 @@ function subxor(larger::Ubig, smaller::Usmall, byte::UInt=1) where {Ubig <: Unsi
 end
 
 """
-    ingest(sponge::ByteSponge, x::Union{<:Unsigned, NTuple{N, <:Unsigned}})
+    absorb(sponge::ByteSponge, x::Union{<:Unsigned, NTuple{N, <:Unsigned}})
 
 Ingest `x` into `sponge`.
 """
-function ingest((; state, byte)::ByteSponge{rate}, x::UInt8) where {rate}
+function absorb((; state, byte)::ByteSponge{rate}, x::UInt8) where {rate}
     lane, lbyte = (byte-1) ÷ sizeof(UInt64) + 1, (byte-1) % sizeof(UInt64) + 1
     state = setindex(state, subxor(state[lane], x, lbyte), lane)
     byte += 1
@@ -191,16 +191,16 @@ function ingest((; state, byte)::ByteSponge{rate}, x::UInt8) where {rate}
     ByteSponge{rate}(state, byte)
 end
 
-function ingest(sponge::ByteSponge{rate}, x::U) where {rate, U<:Unsigned}
+function absorb(sponge::ByteSponge{rate}, x::U) where {rate, U<:Unsigned}
     for byte in ntupleinterpret(UInt8, x)
-        sponge = ingest(sponge, byte)
+        sponge = absorb(sponge, byte)
     end
     sponge
 end
 
-function ingest(sponge::ByteSponge, x::NTuple{N, U}) where {N, U<:Unsigned}
+function absorb(sponge::ByteSponge, x::NTuple{N, U}) where {N, U<:Unsigned}
     for val in x
-        sponge = ingest(sponge, val)
+        sponge = absorb(sponge, val)
     end
     sponge
 end

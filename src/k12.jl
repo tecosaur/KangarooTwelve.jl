@@ -1,7 +1,7 @@
 function k12_singlethreaded(message::AbstractVector{<:UInt8to64}, customisation::AbstractVector{<:UInt8to64})
-    vine = ingest(CoralVineSeedling{RATE}(), message)
-    vine = ingest(vine, customisation)
-    vine = ingest_length(vine, customisation)
+    vine = absorb(CoralVineSeedling{RATE}(), message)
+    vine = absorb(vine, customisation)
+    vine = absorb_length(vine, customisation)
     squeeze(UInt128, finalise(vine))
 end
 
@@ -9,10 +9,10 @@ function k12_singlethreaded(io::IO, customisation::AbstractVector{<:UInt8to64})
     block = Vector{UInt8}(undef, BLOCK_SIZE)
     vine = CoralVineSeedling{RATE}()
     while (size = readbytes!(io, block)) > 0
-        vine = ingest(vine, view(block, 1:size))
+        vine = absorb(vine, view(block, 1:size))
     end
-    vine = ingest(vine, customisation)
-    vine = ingest_length(vine, customisation)
+    vine = absorb(vine, customisation)
+    vine = absorb_length(vine, customisation)
     squeeze(UInt128, finalise(vine))
 end
 
@@ -21,18 +21,18 @@ function k12_singlethreaded_simd(message::AbstractVector{U}, customisation::Abst
         return k12_singlethreaded(message, customisation)
     end
     slices = slice_message(U, length(message), Val{SIMD_FACTOR}())
-    vine = ingest(CoralVineSeedling{RATE}(), view(message, slices.init))::CoralVine{RATE}
+    vine = absorb(CoralVineSeedling{RATE}(), view(message, slices.init))::CoralVine{RATE}
     bsize = BLOCK_SIZE÷sizeof(U)
     for simd_start in slices.blocks
         blocks = ntuple(i -> reinterpret(UInt64, view(message, simd_start+(i-1)*bsize:simd_start+i*bsize-1)),
                         Val{SIMD_FACTOR}())
         u64x4x4 = turboshake(NTuple{4, UInt64}, blocks, K12_SUFFIXES.leaf)
-        trunk = ingest(vine.trunk, ntupleinterpret(UInt64, u64x4x4))
+        trunk = absorb(vine.trunk, ntupleinterpret(UInt64, u64x4x4))
         vine = CoralVine(trunk, vine.leaf, vine.nbytes + BLOCK_SIZE * SIMD_FACTOR)
     end
-    vine = ingest(vine, view(message, slices.tail))
-    vine = ingest(vine, customisation)
-    vine = ingest_length(vine, customisation)
+    vine = absorb(vine, view(message, slices.tail))
+    vine = absorb(vine, customisation)
+    vine = absorb_length(vine, customisation)
     squeeze(UInt128, finalise(vine))
 end
 
@@ -61,14 +61,14 @@ function k12_multithreaded(message::AbstractVector{U}, customisation::AbstractVe
             cvs[4(i-1)+j] = cv[j]
         end
     end
-    vine = ingest(CoralVineSeedling{RATE}(), view(message, slices.init))::CoralVine{RATE}
+    vine = absorb(CoralVineSeedling{RATE}(), view(message, slices.init))::CoralVine{RATE}
     for cv in cvs
-        trunk = ingest(vine.trunk, cv)
+        trunk = absorb(vine.trunk, cv)
         vine = CoralVine(trunk, vine.leaf, vine.nbytes + BLOCK_SIZE ÷ 4)
     end
-    vine = ingest(vine, view(message, slices.tail))
-    vine = ingest(vine, customisation)
-    vine = ingest_length(vine, customisation)
+    vine = absorb(vine, view(message, slices.tail))
+    vine = absorb(vine, customisation)
+    vine = absorb_length(vine, customisation)
     squeeze(UInt128, finalise(vine))
 end
 
@@ -87,7 +87,7 @@ This scheme presents a good balance of *Simplicity*, *Security*, and *Speed*.
 The KangarooTwelve hashing scheme works by splitting the input data into ``n``
 $BLOCK_SIZE-byte blocks (``S₀``, ``S₁``, …, ``Sₙ₋₁``) which are individually
 hashed with [`TurboSHAKE128`](@ref turboshake) to produce 32-byte "chaining
-values" (CVs), which are put together and ingested to produce the final state.
+values" (CVs), which are put together and absorbed to produce the final state.
 
 ```text
                ╭────╮ ╭────╮   ╭────╮ ╭────╮

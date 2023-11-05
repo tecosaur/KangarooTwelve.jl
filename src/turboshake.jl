@@ -37,14 +37,14 @@ end
 # Ingestion, padding, and squeezing
 
 """
-    ingest(state::NTuple{25, UInt64}, block::NTuple{rate, UInt64})
+    absorb(state::NTuple{25, UInt64}, block::NTuple{rate, UInt64})
 
 Ingest a single `block` of input (with implied `rate`) into `state` or `sponge`.
 
 The first `rate` elements of the state are `xor`'d `block`, and then the state
 is permuted with `keccak_p1600`.
 """
-function ingest(state::NTuple{25, UInt64}, block::NTuple{rate, UInt64}) where {rate}
+function absorb(state::NTuple{25, UInt64}, block::NTuple{rate, UInt64}) where {rate}
     state = @ntuple 25 i -> if i <= rate
         state[i] ⊻ block[i]
     else state[i] end
@@ -52,14 +52,14 @@ function ingest(state::NTuple{25, UInt64}, block::NTuple{rate, UInt64}) where {r
 end
 
 """
-    ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVector{<:Unsigned})
+    absorb(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVector{<:Unsigned})
 
 Ingest `message` into `state`, with the rate calculated based on `capacity`.
 
-This breaks `message` into rate-sized blocks and then ingests them (as per
-`ingest(state, ::NTuple{rate, UInt64})`) in turn.
+This breaks `message` into rate-sized blocks and then absorbs them (as per
+`absorb(state, ::NTuple{rate, UInt64})`) in turn.
 """
-function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVector{UInt64}) where {capacity}
+function absorb(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVector{UInt64}) where {capacity}
     rate = cap2rate(capacity)
     loopend = length(message) - length(message) % rate
     for offset in 1:rate:loopend
@@ -72,7 +72,7 @@ end
 
 # Unfortunately we do have to write a second SIMD-capable version since the
 # block construction is a little different to the linear version.
-function ingest(state::NTuple{25, Vec{N, UInt64}}, ::Val{capacity}, messages::NTuple{N, <:AbstractVector{UInt64}}) where {N, capacity}
+function absorb(state::NTuple{25, Vec{N, UInt64}}, ::Val{capacity}, messages::NTuple{N, <:AbstractVector{UInt64}}) where {N, capacity}
     rate = cap2rate(capacity)
     msglengths = map(length, messages)
     for pos in 1:rate:maximum(msglengths)
@@ -90,7 +90,7 @@ function ingest(state::NTuple{25, Vec{N, UInt64}}, ::Val{capacity}, messages::NT
 end
 
 # ~5% overhead compared to a UInt64 message
-function ingest(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVector{U}) where {capacity, U<:Union{UInt32,UInt16,UInt8}}
+function absorb(state::NTuple{25, UInt64}, ::Val{capacity}, message::AbstractVector{U}) where {capacity, U<:Union{UInt32,UInt16,UInt8}}
     rate = 200 ÷ sizeof(U) - capacity ÷ (8 * sizeof(U))
     ratio = sizeof(UInt64)÷sizeof(U)
     for block in partition(message, rate)
@@ -207,12 +207,12 @@ end
 Produce an `output` (`Unsigned` or `NTuple{n, <:Unsigned}`) value, by
 performing TurboSHAKE on `message` with a certain `capacity` and `delimsuffix`.
 
-See also: `ingest`, `pad`, `squeeze`.
+See also: `absorb`, `pad`, `squeeze`.
 """
 function turboshake(output::Type, # <:Unsigned or NTuple{n, <:Unsigned}
                     message::AbstractVector{<:UInt8to64},
                     delimsuffix::UInt8=0x80, ::Val{capacity} = Val{CAPACITY}()) where {capacity}
-    state = ingest(EMPTY_STATE, Val{capacity}(), message)
+    state = absorb(EMPTY_STATE, Val{capacity}(), message)
     # It might seem like `mod1` would make sense here, but for *whatever reason*
     # that seems to cause allocations. This took several hours to pinpoint.
     lastbyte = (length(message) * sizeof(eltype(message))) % UInt % (200 - capacity ÷ 8) + 1
@@ -225,7 +225,7 @@ function turboshake(output::Type, # <:Unsigned or NTuple{n, <:Unsigned}
                     message::NTuple{N, <:AbstractVector{<:UInt8to64}},
                     delimsuffix::UInt8=0x80, ::Val{capacity} = Val{CAPACITY}()) where {N, capacity}
     empty_state = ntuple(_ -> Vec(ntuple(_ -> zero(UInt64), Val{N}())), Val{25}())
-    state = ingest(empty_state, Val{capacity}(), message)
+    state = absorb(empty_state, Val{capacity}(), message)
     # This `lastindex` expression allocates. Why!?
     lastindex = ntuple(i -> (length(message[i]) * sizeof(eltype(message[i]))) % UInt % (200 - capacity ÷ 8) + 1, Val{N}())
     state = pad(state, Val{capacity}(), lastindex, delimsuffix)
