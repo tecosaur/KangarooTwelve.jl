@@ -26,9 +26,49 @@ const χs =
 """
     keccak_p1600(state::NTuple{25, UInt64}, ::Val{nrounds}=Val{12}())
 
-Apply the Keccak-p[`nrounds`, 1600] permutation to `state`. This is formally
+Apply the Keccak-*p*[`nrounds`, 1600] permutation to `state`. This is formally
 defined in [the Keccak reference](https://keccak.team/files/Keccak-reference-3.0.pdf)
  and formalised in [FIPS 202](https://csrc.nist.gov/pubs/fips/202/final).
+
+# Extended help
+
+This is a variable-round permutation, with up to 24 rounds, where the last round
+performed matches the final Keccak-*f* permutation round.
+
+Each round of permutation consists of five steps, termed θ, ρ, π, χ, and ι.
+These all operate on a 200-byte state, viewed in a number of different
+configurations.
+
+```text
+             ┌─┬─┬─┬─┬─┐
+            ┌─┬─┬─┬─┬─┐┤
+           ┌─┬─┬─┬─┬─┐┤┤
+          ┌─┬─┬─┬─┬─┐┤┤┤
+         ┌─┬─┬─┬─┬─┐┤┤┤┤
+        ┌─┬─┬─┬─┬─┐┤┤┤┤┘
+       ┌─┬─┬─┬─┬─┐┤┤┤┤┘
+      ┌─┬─┬─┬─┬─┐┤┤┤┤┘
+      ├─┼─┼─┼─┼─┤┤┤┤┘
+      ├─┼─┼─┼─┼─┤┤┤┘
+      ├─┼─┼─┼─┼─┤┤┘        ┌─┐ bit
+      ├─┼─┼─┼─┼─┤┘         └─┘         ┌─┐
+      └─┴─┴─┴─┴─┘                     ┌─┐┘
+         state                       ┌─┐┘
+                                    ┌─┐┘
+                   ┌─┐             ┌─┐┘
+                   ├─┤ column     ┌─┐┘
+     row           ├─┤           ┌─┐┘
+ ┌─┬─┬─┬─┬─┐       ├─┤          ┌─┐┘  lane
+ └─┴─┴─┴─┴─┘       ├─┤          └─┘
+                   └─┘
+```
+
+- **θ step** Compute the parity of five columns, and xor-diffuse their parity into nearby columns.
+- **ρ step** Bitwise-rotate each of the 25 lanes by a different triangular number.
+- **π step** Permute each lane in a fixed pattern.
+- **χ step** Intra-row bitwise combination. This provides the non-linearity.
+- **ι step** The first lane is (xor-)mixed with a LFSR sequence across rounds.
+  This serves to disrupt the symmetry of the scheme.
 """
 @inline function keccak_p1600(state::NTuple{25, <:Union{UInt64, <:Vec{<:Any, UInt64}}}, ::Val{nrounds}=Val{12}()) where {nrounds}
     # Inlining `roll64` makes this faster with SIMD, but also non-deterministic 😢
