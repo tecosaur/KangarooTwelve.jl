@@ -19,7 +19,7 @@ else
     end
     @generated function ntupleinterpret(::Type{T}, x::NTuple{N, U}) where {T<:Unsigned, N, U<:Unsigned}
         if sizeof(T) <= sizeof(U)
-            Expr(:tuple, ntuple(i -> :(x[$(fld1(i, sizeof(U)))] >> $(8 * ((i - 1) % sizeof(U)) * sizeof(T)) % $T),
+            Expr(:tuple, ntuple(i -> :(x[$(fld1(i, sizeof(U) ÷ sizeof(T)))] >> $(8 * ((i - 1) % (sizeof(U) ÷ sizeof(T))) * sizeof(T)) % $T),
                                 N * sizeof(U) ÷ sizeof(T))...)
         else
             Expr(:tuple, ntuple(i ->
