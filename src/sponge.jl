@@ -48,9 +48,6 @@ function ingest((; state, lane)::Sponge{rate}, lanes::NTuple{N, UInt64}) where {
     Sponge{rate}(state, lane)
 end
 
-pad((; state, lane)::Sponge{rate}, delimsuffix::UInt8) where {rate} =
-    Sponge{rate}(pad(state, Val{rate2cap(rate)}(), 8 * (lane-1) + 1, delimsuffix), 1)
-
 """
     squeeze(T::Type, sponge::AbstractSponge)
 
