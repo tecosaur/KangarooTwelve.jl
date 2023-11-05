@@ -1,67 +1,119 @@
-abstract type AbstractVine{rate} end
+"""
+    AbstractCoralVine{rate}
+
+A binary tree where at each node, only one child itself has children.
+
+```text
+trunk ◆
+     / \\
+    ◆   ◇ leaf
+   / \\
+  ◆   ◇ leaf
+  ┆
+```
+
+This esentially creates a "vine" like structure, with a single "trunk" that has
+terminal "leaves" sprouting off it.
+
+The trunk and its leaves are [sponges](@ref AbstractSponge), and it is this
+"vine of sponges" conception that lends itself to the "Coral Vine" name (since
+coral sponges are the only sponge that grows I'm aware of).
+
+Since the final result of the vine is obtained from folding all leaves into it sequentially,
+we can represent the intermediate state of the vine with just the "trunk" and
+the most recent leaf (having folded all completed leaves into the trunk).
+
+```text
+                      ╭──────╮
+                      │ Leaf │
+╭─────────╮      □    ╰─┬────╯
+│  Trunk  ├──┬───┴───┬──╯
+╰─────────╯  □       □
+```
+
+However, at the very start data is absorbed into the trunk itself. After it is
+full, all subsequent data goes to the leaves, and the trunk only absorbs values
+squeezed from leaves.
+
+The distinction between these two stages is made with the subtypes
+[`CoralVineSeedling`](@ref) and [`CoralVine`](@ref).
+"""
+abstract type AbstractCoralVine{rate} end
 
 """
-    GerminatingVine{rate}
+    CoralVineSeedling{rate}
 
-A `vine` that hasn't started to grow leaves yet (see the `k12` docstring).
+A `vine` that hasn't started to grow leaves yet (see the [`AbstractCoralVine`](@ref) docstring).
 
-See also: `Vine`, `ingest`, `ingest_length`, `finalise`.
+```text
+╭─────────╮
+│  Trunk  ├───
+╰─────────╯
+```
+
+See also: [`CoralVine`](@ref), `ingest`, `ingest_length`, `finalise`.
 """
-struct GerminatingVine{rate} <: AbstractVine{rate}
+struct CoralVineSeedling{rate} <: AbstractCoralVine{rate}
     trunk::ByteSponge{rate}
-    leaf::ByteSponge{rate}
     nbytes::UInt
 end
 
-GerminatingVine{rate}() where {rate} =
-    GerminatingVine{rate}(ByteSponge{rate}(), ByteSponge{rate}(), 0)
+CoralVineSeedling{rate}() where {rate} =
+    CoralVineSeedling{rate}(ByteSponge{rate}(), 0)
 
 """
-    Vine{rate}
+    CoralVine{rate}
 
-A `vine` with leaves (see the `k12` docstring).
+A `vine` with leaves (see the [`k12`](@ref) docstring).
 
-See also: `GerminatingVine`, `ingest`, `ingest_length`, `finalise`.
+```text
+                      ╭──────╮
+                      │ Leaf │
+╭─────────╮      □    ╰─┬────╯
+│  Trunk  ├──┬───┴───┬──╯
+╰─────────╯  □       □
+```
+
+See also: [`CoralVineSeedling`](@ref), `ingest`, `ingest_length`, `finalise`.
 """
-struct Vine{rate} <: AbstractVine{rate}
+struct CoralVine{rate} <: AbstractCoralVine{rate}
     trunk::Sponge{rate}
     leaf::ByteSponge{rate}
     nbytes::UInt
 end
 
 """
-    ingest(vine::AbstractVine, leaflet::AbstractVector{<:Unsigned})
-    ingest(vine::AbstractVine, x::Unsigned)
+    ingest(vine::AbstractCoralVine, leaflet::AbstractVector{<:Unsigned})
+    ingest(vine::AbstractCoralVine, x::Unsigned)
 
 Ingest `leaflet`/`x` into `vine`, this may go into the leaves or the trunk depending
 on the vine type, and may cause the current leaf to be folded into the trunk,
 and a new leaf grown.
 """
-function ingest((; trunk, leaf, nbytes)::GerminatingVine{rate}, leaflet::AbstractVector{U}) where {rate, U<:Unsigned}
+function ingest((; trunk, nbytes)::CoralVineSeedling{rate}, leaflet::AbstractVector{U}) where {rate, U<:Unsigned}
     leafletbytes = length(leaflet) * sizeof(U)
     if nbytes == 0 && leafletbytes == BLOCK_SIZE
         zerostate = ingest(EMPTY_STATE, Val{rate2cap(rate)}(), reinterpret(UInt64, leaflet))
-        Vine{rate}(ingest(Sponge{rate}(zerostate, 1 + (BLOCK_SIZE ÷ 8) % rate), K12_ZEROBLOCK_SUFFIX),
-                   leaf, BLOCK_SIZE)
+        CoralVine{rate}(ingest(Sponge{rate}(zerostate, 1 + (BLOCK_SIZE ÷ 8) % rate), K12_ZEROBLOCK_SUFFIX),
+                        ByteSponge{rate}(), BLOCK_SIZE)
     elseif nbytes + leafletbytes < BLOCK_SIZE
-        GerminatingVine{rate}(
-            ingest(trunk, leaflet), leaf, nbytes + leafletbytes)
+        CoralVineSeedling{rate}(
+            ingest(trunk, leaflet), nbytes + leafletbytes)
     else
         trunkfill = (BLOCK_SIZE - nbytes) ÷ sizeof(U)
         trunk = convert(Sponge, ingest(trunk, view(leaflet, 1:trunkfill)))
-        vine = Vine(ingest(trunk, K12_ZEROBLOCK_SUFFIX), leaf, UInt(BLOCK_SIZE))
+        vine = CoralVine(ingest(trunk, K12_ZEROBLOCK_SUFFIX), ByteSponge{rate}(), UInt(BLOCK_SIZE))
         ingest(vine, view(leaflet, trunkfill+1:length(leaflet)))
     end
 end
 
-function ingest((; trunk, leaf, nbytes)::GerminatingVine{rate}, x::U) where {rate, U<:UInt8to64}
+function ingest((; trunk, nbytes)::CoralVineSeedling{rate}, x::U) where {rate, U<:UInt8to64}
     if nbytes + sizeof(U) < BLOCK_SIZE
-        GerminatingVine{rate}(ingest(trunk, x), leaf, nbytes + sizeof(U))
+        CoralVineSeedling{rate}(ingest(trunk, x), nbytes + sizeof(U))
     elseif nbytes + sizeof(U) == BLOCK_SIZE
-        Vine{rate}(convert(Sponge, ingest(trunk, x)),
-                   leaf, nbytes + sizeof(U))
+        CoralVine{rate}(convert(Sponge, ingest(trunk, x)), ByteSponge{rate}(), nbytes + sizeof(U))
     else
-        vine = GerminatingVine(trunk, leaf, nbytes)
+        vine = CoralVineSeedling(trunk, nbytes)
         for byte in ntupleinterpret(UInt8, x)
             vine = ingest(vine, byte)
         end
@@ -69,11 +121,11 @@ function ingest((; trunk, leaf, nbytes)::GerminatingVine{rate}, x::U) where {rat
     end
 end
 
-function ingest((; trunk, leaf, nbytes)::Vine{rate}, leaflet::AbstractVector{U}) where {rate, U<:UInt8to64}
+function ingest((; trunk, leaf, nbytes)::CoralVine{rate}, leaflet::AbstractVector{U}) where {rate, U<:UInt8to64}
     partial_bytes = (nbytes % BLOCK_SIZE) + length(leaflet)*sizeof(U)
     total_bytes = nbytes + length(leaflet)*sizeof(U)
     if partial_bytes < BLOCK_SIZE
-        Vine(trunk, ingest(leaf, leaflet), total_bytes)
+        CoralVine(trunk, ingest(leaf, leaflet), total_bytes)
     elseif nbytes % sizeof(U) == 0
         ntofill = (BLOCK_SIZE - (nbytes % BLOCK_SIZE)) ÷ sizeof(U)
         leaf = ingest(leaf, view(leaflet, 1:ntofill))
@@ -87,18 +139,18 @@ function ingest((; trunk, leaf, nbytes)::Vine{rate}, leaflet::AbstractVector{U})
                 leaf = ingest(ByteSponge{rate}(), view(leaflet, block))
             end
         end
-        Vine(trunk, leaf, total_bytes)
+        CoralVine(trunk, leaf, total_bytes)
     else
         (@noinline () -> @error "Oh no! Something has gone very wrong, this message should never be printed 😟")()
-        Vine(trunk, leaf, nbytes)
+        CoralVine(trunk, leaf, nbytes)
     end
 end
 
-function ingest(vine::Vine{rate}, x::U) where {rate, U<:UInt8to64}
+function ingest(vine::CoralVine{rate}, x::U) where {rate, U<:UInt8to64}
     if (vine.nbytes % BLOCK_SIZE) + sizeof(U) < BLOCK_SIZE
-        Vine(vine.trunk, ingest(vine.leaf, x), vine.nbytes + sizeof(U))
+        CoralVine(vine.trunk, ingest(vine.leaf, x), vine.nbytes + sizeof(U))
     elseif (vine.nbytes % BLOCK_SIZE) + sizeof(U) == BLOCK_SIZE
-        Vine(ingest(vine.trunk, squeeze(NTuple{4, UInt64}, vine.leaf)),
+        CoralVine(ingest(vine.trunk, squeeze(NTuple{4, UInt64}, vine.leaf)),
              ingest(ByteSponge{rate}(), x), vine.nbytes + sizeof(U))
     else # `x` is not aligned with the partial data, so ingest byte by byte
         for byte in ntupleinterpret(UInt8, x)
@@ -109,11 +161,11 @@ function ingest(vine::Vine{rate}, x::U) where {rate, U<:UInt8to64}
 end
 
 """
-    ingest_length(accumulator::Union{<:ByteSponge, <:AbstractVine}, val::UInt, ::Val{bufsize}=Val{8}())
+    ingest_length(accumulator::Union{<:ByteSponge, <:AbstractCoralVine}, val::UInt, ::Val{bufsize}=Val{8}())
 
 Ingest a right-encoded form of `val` into `accumulator`, allowing the encoding to be up to `bufsize` bytes.
 """
-function ingest_length(accum::Union{<:ByteSponge, <:AbstractVine}, val::UInt, ::Val{bufsize}=Val{8}()) where {bufsize}
+function ingest_length(accum::Union{<:ByteSponge, <:AbstractCoralVine}, val::UInt, ::Val{bufsize}=Val{8}()) where {bufsize}
     buffer = ntuple(_ -> 0x00, Val{bufsize}())
     point = 0
     while (val > 0)
@@ -126,18 +178,19 @@ function ingest_length(accum::Union{<:ByteSponge, <:AbstractVine}, val::UInt, ::
     ingest(accum, UInt8(point))
 end
 
-function ingest_length(accum::Union{<:ByteSponge, <:AbstractVine}, arr::AbstractVector{U}, ::Val{bufsize}=Val{8}()) where {bufsize, U <: UInt8to64}
+function ingest_length(accum::Union{<:ByteSponge, <:AbstractCoralVine}, arr::AbstractVector{U}, ::Val{bufsize}=Val{8}()) where {bufsize, U <: UInt8to64}
     ingest_length(accum, UInt(length(arr)) * sizeof(U), Val{bufsize}())
 end
 
 """
-    finalise(vine::AbstractVine) -> ByteSponge
+    finalise(vine::AbstractCoralVine) -> ByteSponge
 
 Finalise `vine` by folding in the current leaf returning the `pad`ded trunk.
 """
-function finalise((; trunk, leaf, nbytes)::AbstractVine{rate}) where {rate}
-    if leaf.byte != 1
-        leaf = pad(leaf, K12_SUFFIXES.leaf)
+function finalise(vine::AbstractCoralVine{rate}) where {rate}
+    (; trunk, nbytes) = vine
+    if vine isa CoralVine && vine.leaf.byte != 1
+        leaf = pad(vine.leaf, K12_SUFFIXES.leaf)
         cv = squeeze(NTuple{4, UInt64}, leaf)
         trunk = ingest(trunk, cv)
     end
