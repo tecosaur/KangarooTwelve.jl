@@ -18,8 +18,9 @@ KangarooTwelve.turboshake
 KangarooTwelve.AbstractSponge
 KangarooTwelve.Sponge
 KangarooTwelve.ByteSponge
-KangarooTwelve.GerminatingVine
-KangarooTwelve.Vine
+KangarooTwelve.AbstractCoralVine
+KangarooTwelve.CoralVineSeedling
+KangarooTwelve.CoralVine
 KangarooTwelve.ingest_length
 KangarooTwelve.finalise
 #+end_src
