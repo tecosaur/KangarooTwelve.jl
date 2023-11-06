@@ -1,9 +1,10 @@
 using KangarooTwelve
 using Test
 
-import KangarooTwelve: keccak_p1600, absorb, pad, squeeze, squeeze!,
-    turboshake, Sponge, ByteSponge, absorb_length, ntupleinterpret, uinterpret,
-    k12_singlethreaded, k12_singlethreaded_simd, k12_multithreaded, k12
+import KangarooTwelve: keccak_p1600, absorb, pad, squeeze, squeeze!, turboshake,
+    Sponge, ByteSponge, CoralVine, CoralVineSeedling, absorb_length, ntupleinterpret,
+    uinterpret, k12_singlethreaded, k12_singlethreaded_simd, k12_multithreaded, k12,
+    EMPTY_STATE, BLOCK_SIZE
 
 @testset "keccak" begin
     keccak_1600_init =
@@ -47,9 +48,10 @@ import KangarooTwelve: keccak_p1600, absorb, pad, squeeze, squeeze!,
     @test keccak_p1600(keccak_1600_init, Val(24)) == keccak_1600_24rounds
 end
 
-@testset "Sponge absorbion" begin
-    sponge = absorb(ByteSponge{21}(), 0x11)
-    rate = (((::ByteSponge{rate}) where {rate}) -> rate)(sponge)
+@testset "Sponge absorption" begin
+    rate = 21
+    # Byte Sponge
+    sponge = absorb(ByteSponge{rate}(), 0x11)
     @test sponge.state[1] == 0x0000000000000011
     sponge = absorb(sponge, 0x2222)
     @test sponge.state[1] == 0x0000000000222211
@@ -70,7 +72,25 @@ end
     @test sum(sponge.state) == 0x3568ace824579ba2
     @test absorb(sponge, 0x1111111111111111).state[1] == 0x070513f3bdbfaa6f
     @test absorb(sponge, (0x11111111, 0x11111111)).state[1] == 0x070513f3bdbfaa6f
-    @test_broken absorb(absorb(sponge, 0x22222222), 0x1111111111111111).state[1] == 0x0000000011111111
+    @test absorb(absorb(sponge, 0x22222222), 0x1111111111111111).state[1] == 0xc2b3c50159cb7aeb
+end
+
+@testset "Vine edge-cases" begin
+    # The non-edge case behaviour is thoroughly tested by k12
+    rate = 21
+    vine = CoralVineSeedling{rate}(ByteSponge{rate}(EMPTY_STATE, rate * 8 - 4), BLOCK_SIZE - 4)
+    vine = absorb(vine, 0x1111)
+    @test vine.trunk.state[rate] == 0x0000111100000000
+    @test vine.nbytes == BLOCK_SIZE - 2
+    vine = absorb(vine, 0x22221111)
+    @test vine.trunk.state[1] == 0x1f60257f9e0dee9a
+    @test vine.leaf.state[1] == 0x0000000000002222
+    @test vine.nbytes == BLOCK_SIZE + 2
+    vine = CoralVine(Sponge{rate}(), ByteSponge{rate}(), UInt64(BLOCK_SIZE - 4))
+    @test absorb(absorb(vine, 0x1122), 0x3344).trunk.state[1] == 0x0000000000001122
+    @test absorb(absorb(vine, 0x1122), 0x3344).leaf.state[1] == 0x0000000000003344
+    @test absorb(vine, 0x8877665544332211) ==
+        absorb(absorb(absorb(absorb(absorb(absorb(absorb(absorb(vine, 0x11), 0x22), 0x33), 0x44), 0x55), 0x66), 0x77), 0x88)
 end
 
 @testset "Sponge squeezing" begin
