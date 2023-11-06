@@ -71,15 +71,14 @@ configurations.
   This serves to disrupt the symmetry of the scheme.
 """
 @inline function keccak_p1600(state::NTuple{25, <:Union{UInt64, <:Vec{<:Any, UInt64}}}, ::Val{nrounds}=Val{12}()) where {nrounds}
-    # Inlining `roll64` makes this faster with SIMD, but also non-deterministic 😢
-    rol64(a, n) = (a << n) | (a >> (64 - n))
+    @inline rol64(a, n) = (a << n) | (a >> (64 - n))
     @inbounds for round in (25 - nrounds):24
         # θ (diffusion)
         C = @ntuple 5 i -> reduce(⊻, @ntuple 5 k -> state[i+5*(k-1)])
         D = @ntuple 5 i -> C[mod1(i+4, 5)] ⊻ rol64(C[mod1(i+1, 5)], 1)
         state = @ntuple 25 i -> state[i] ⊻ D[mod1(i, 5)]
         # ρ (rotation) and π (lane permutation)
-        state = @ntuple 25 i -> rol64(state[πs[i]], ρs[i]) # the `rol64` SIMD issue occurs here
+        state = @ntuple 25 i -> if ρs[i] > 0 rol64(state[πs[i]], ρs[i]) else state[πs[i]] end
         # χ (intra-row bitwise combination, nonlinear)
         state = @ntuple 25 i -> state[i] ⊻ (~state[χs[i][1]] & state[χs[i][2]])
         # ι (symmetry disruptor)
