@@ -189,7 +189,7 @@ Finalise `vine` by folding in the current leaf returning the `pad`ded trunk.
 """
 function finalise(vine::AbstractCoralVine{rate}) where {rate}
     (; trunk, nbytes) = vine
-    if vine isa CoralVine && vine.leaf.byte != 1
+    if vine isa CoralVine && vine.leaf.byte != 0
         leaf = pad(vine.leaf, K12_SUFFIXES.leaf)
         cv = squeeze(NTuple{4, UInt64}, leaf)
         trunk = absorb(trunk, cv)

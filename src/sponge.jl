@@ -44,7 +44,7 @@ abstract type AbstractSponge{rate} end
 """
     Sponge{rate}
 
-A Keccak state that keeps track of the last *lane* updated.
+A Keccak state that keeps track of the current *lane*.
 
 For more information on the sponge construction see [`AbstractSponge`](@ref).
 
@@ -147,31 +147,31 @@ struct ByteSponge{rate} <: AbstractSponge{rate}
     byte::UInt
 end
 
-ByteSponge{rate}() where {rate} = ByteSponge{rate}(EMPTY_STATE, 1)
+ByteSponge{rate}() where {rate} = ByteSponge{rate}(EMPTY_STATE, 0)
 
 Base.convert(::Type{ByteSponge}, (; state, lane)::Sponge{rate}) where {rate} =
-    ByteSponge{rate}(state, sizeof(UInt64) * (lane - 1) + 1)
+    ByteSponge{rate}(state, sizeof(UInt64) * (lane - 1))
 
 function Base.convert(::Type{Sponge}, (; state, byte)::ByteSponge{rate}) where {rate}
-    if (byte - 1) % sizeof(UInt64) == 0
-        Sponge{rate}(state, (byte - 1) ÷ sizeof(UInt64) + 1)
+    if byte % sizeof(UInt64) == 0
+        Sponge{rate}(state, byte ÷ sizeof(UInt64) + 1)
     else
         (@noinline () -> throw(ArgumentError("ByteSponge could not be cleanly converted to a Sponge as the current byte did not cleanly align with a lane")))()
     end
 end
 
 pad((; state, byte)::ByteSponge{rate}, delimsuffix::UInt8) where {rate} =
-    ByteSponge{rate}(pad(state, Val{rate2cap(rate)}(), byte, delimsuffix), 1)
+    ByteSponge{rate}(pad(state, Val{rate2cap(rate)}(), byte+1, delimsuffix), 0)
 
 """
-    subxor(larger::Ubig, smaller::Usmall, byte::UInt=1)
+    subxor(larger::Ubig, smaller::Usmall, offset::UInt=0)
 
-xor `larger` with `smaller`, lining the start of `smaller` up with `byte` of
-`larger`.
+xor `larger` with `smaller`, lining the start of `smaller` up `offset` bytes
+from the start of `larger`.
 """
-function subxor(larger::Ubig, smaller::Usmall, byte::UInt=1) where {Ubig <: Unsigned, Usmall <: Unsigned}
+function subxor(larger::Ubig, smaller::Usmall, offset::UInt=0) where {Ubig <: Unsigned, Usmall <: Unsigned}
     Ubig == Usmall && return larger ⊻ smaller
-    shift = 8 * (byte - 1)
+    shift = 8 * offset
     value = (smaller % Ubig) << shift
     larger ⊻ value
 end
@@ -182,11 +182,11 @@ end
 Ingest `x` into `sponge`.
 """
 function absorb((; state, byte)::ByteSponge{rate}, x::UInt8) where {rate}
-    lane, lbyte = (byte-1) ÷ sizeof(UInt64) + 1, (byte-1) % sizeof(UInt64) + 1
+    lane, lbyte = byte ÷ sizeof(UInt64) + 1, byte % sizeof(UInt64)
     state = setindex(state, subxor(state[lane], x, lbyte), lane)
     byte += 1
-    if lane == rate && lbyte == sizeof(UInt64)
-        state, byte = keccak_p1600(state), 1
+    if byte == rate * sizeof(UInt64)
+        state, byte = keccak_p1600(state), 0
     end
     ByteSponge{rate}(state, byte)
 end
