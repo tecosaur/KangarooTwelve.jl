@@ -100,8 +100,8 @@ This scheme has been described as "leaves on a vine". The hashing of blocks
 ``S₁`` to ``Sₙ₋₁`` is embarassingly parallel, and can be accelerated with both
 SIMD and multithreading.
 """
-function k12(data::AbstractVector{<:Unsigned}, customisation::AbstractVector{<:Unsigned}=UInt8[]; thread::Bool=true)
-    if thread
+function k12(data::AbstractVector{U}, customisation::AbstractVector{<:Unsigned}=UInt8[]; thread::Bool=true) where {U<:Unsigned}
+    if thread && length(data) * sizeof(U) > 48 * 1024 # Seems to be worthwhile above ~48 KiB
         k12_multithreaded(data, customisation)
     else
         k12_singlethreaded(data, customisation)
