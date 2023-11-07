@@ -73,6 +73,19 @@ end
     @test absorb(sponge, 0x1111111111111111).state[1] == 0x070513f3bdbfaa6f
     @test absorb(sponge, (0x11111111, 0x11111111)).state[1] == 0x070513f3bdbfaa6f
     @test absorb(absorb(sponge, 0x22222222), 0x1111111111111111).state[1] == 0xc2b3c50159cb7aeb
+    @test absorb(absorb(sponge, 0x22222222), [0x1111, 0x1111, 0x1111, 0x1111]).state[1] == 0xc2b3c50159cb7aeb
+    # Lane Sponge
+    sponge = Sponge{rate}()
+    @test absorb(sponge, 0x1111111111111111).state[1] == 0x1111111111111111
+    @test absorb(sponge, fill(0x1111111111111111, rate-1)).state[1] == 0x1111111111111111
+    @test absorb(sponge, fill(0x1111111111111111, rate-1)).lane == rate
+    @test absorb(sponge, fill(0x1111111111111111, rate)).state[1] == 0x21cd3a0d11e3ac4a
+    @test absorb(absorb(sponge, fill(0x1111111111111111, rate-1)), 0x1111111111111111).state[1] == 0x21cd3a0d11e3ac4a
+    @test absorb(absorb(sponge, fill(0x1111111111111111, rate-1)), 0x1111111111111111).lane == 1
+    @test absorb(absorb(sponge, 0x1111111111111111), fill(0x1111111111111111, rate-1)).state[1] == 0x21cd3a0d11e3ac4a
+    @test absorb(absorb(sponge, 0x1111111111111111), fill(0x1111111111111111, rate-1)).lane == 1
+    @test absorb(sponge, fill(0x1111111111111111, 3*rate)).state[1] == 0x74ff8ab126700c8e
+    @test absorb(sponge, fill(0x1111111111111111, 3*rate)).lane == 1
 end
 
 @testset "Vine edge-cases" begin
