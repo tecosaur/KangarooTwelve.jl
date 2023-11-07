@@ -3,7 +3,7 @@ using SHA
 using CRC32c
 using MD5
 using Blake3Hash
-using KangarooTwelve: k12_singlethreaded, k12_multithreaded
+using KangarooTwelve: k12_singlethreaded, k12_singlethreaded_simd, k12_multithreaded, BLOCK_SIZE
 using .GC
 
 using CairoMakie
@@ -28,6 +28,7 @@ alg_hashers = Dict(
     :md5 => md5,
     :crc32c => crc32c,
     :k12_singlethreaded => Base.Fix2(k12_singlethreaded, UInt[]),
+    :k12_singlethreaded_simd => Base.Fix2(k12_singlethreaded_simd, UInt[]),
     :k12_multithreaded => Base.Fix2(k12_multithreaded, UInt[]),
     :blake3 => function (data)
         hasher = Blake3Ctx()
@@ -36,27 +37,35 @@ alg_hashers = Dict(
     end
 )
 
-function bench(alg::Symbol, size::Int; repeats::Int=5)
+function bench(alg::Symbol, size::Int; repeats::Int=clamp(round(Int, log2(2^30/size))^3, 5, 10000))
+    alg == :k12_multithreaded && size <= BLOCK_SIZE && return NaN
+    alg == :k12_singlethreaded_simd && size <= 4 * BLOCK_SIZE && return NaN
     hashfn = alg_hashers[alg]
     hashfn([0x01]) # Potentially trigger JIT
     data = bitpattern(size)
-    times = Float64[]
-    for _ in 1:repeats
-        start = time()
-        x = hashfn(data)
-        stop = time()
-        push!([], x) # premtive dead-code-elimination prevention
+    batchsize = max(1, round(Int, sqrt(repeats ÷ 20)))
+    times = UInt64[]
+    GC.enable(false)
+    for _ in 1:batchsize:repeats
+        start = time_ns()
+        for _ in 1:batchsize
+            x = hashfn(data)
+            Base.donotdelete(x)
+        end
+        stop = time_ns()
         push!(times, stop - start)
     end
     empty!(data)
+    GC.enable(true)
     GC.gc()
-    minimum(times)
+    minimum(times) / (batchsize * 10^9)
 end
 
-all_algs = [:crc32c, :sha256, :sha3_256, :md5, :blake3, :k12_singlethreaded, :k12_multithreaded]
-data_sizes = 2 .^ (15:30)
+all_algs = [:crc32c, :sha256, :sha3_256, :md5, :blake3, :k12_singlethreaded, :k12_multithreaded] # add SIMD once it's better
+data_sizes = 2 .^ (10:30)
 
 alg_labels = Dict(:k12_singlethreaded => "k12 (singlethreaded)",
+                  :k12_singlethreaded_simd => "k12 (singlethreaded, SIMDx4)",
                   :k12_multithreaded => "k12 (multithreaded)",
                   :sha256 => "SHA2-256", :sha3_256 => "SHA3-256")
 
@@ -67,6 +76,7 @@ alg_colors =  Dict(
     :md5                => ColorSchemes.tol_rainbow.colors[7],
     :blake3             => ColorSchemes.tol_rainbow.colors[12],
     :k12_singlethreaded => ColorSchemes.tol_rainbow.colors[16],
+    :k12_singlethreaded_simd => ColorSchemes.tol_rainbow.colors[17],
     :k12_multithreaded  => ColorSchemes.tol_rainbow.colors[15],
 )
 
