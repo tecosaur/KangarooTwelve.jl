@@ -88,6 +88,31 @@ function absorb((; state, lane)::Sponge{rate}, lanes::NTuple{N, UInt64}) where {
     Sponge{rate}(state, lane)
 end
 
+function absorb((; state, lane)::Sponge{rate}, lanes::AbstractVector{UInt64}) where {rate}
+    if isempty(lanes)
+        Sponge{rate}(state, lane)
+    elseif lane == 1
+        loopend = length(lanes) - length(lanes) % rate
+        for offset in 1:rate:loopend
+            block = @view lanes[offset:offset-1+rate]
+            state = keccak_p1600(@ntuple 25 i ->
+                state[i] ⊻ if i <= rate block[i] else zero(UInt64) end)
+        end
+        finalblock = @view lanes[loopend+1:end]
+        state = @ntuple 25 i -> state[i] ⊻ get(finalblock, i, zero(UInt64))
+        Sponge{rate}(state, (lane - 1 + length(lanes)) % rate + 1)
+    else
+        state = @ntuple 25 i -> if lane <= i <= min(rate, lane - 1 + length(lanes))
+            state[i] ⊻ lanes[i - lane + 1]
+        else state[i] end
+        if length(lanes) >= rate - lane + 1
+            state = keccak_p1600(state)
+        end
+        absorb(Sponge{rate}(state, min(rate, lane - 1 + length(lanes)) % rate + 1),
+               view(lanes, (rate - lane + 2):lastindex(lanes)))
+    end
+end
+
 """
     squeeze(T::Type, sponge::AbstractSponge)
 
@@ -112,19 +137,6 @@ absorbing that result.
 """
 @inline absorb(sponge::AbstractSponge{rate}, T::Type, leaf::AbstractVector{U}) where {rate, U<:UInt8to64} =
     absorb(sponge, turboshake(T, leaf, K12_SUFFIXES.leaf))
-
-"""
-    absorb(sponge::AbstractSponge, block::AbstractVector{<:Unsigned})
-
-Ingest each element of `block` into `sponge`.
-"""
-function absorb(sponge::AbstractSponge, block::AbstractVector{U}) where {U <: UInt8to64}
-    # REVIEW optimize? This is just a quick hack
-    for b in block
-        sponge = absorb(sponge, b)
-    end
-    sponge
-end
 
 # absorb(sponge::Sponge, x::Unsigned, xs::Unsigned...) = absorb(absorb(sponge, x), xs...)
 
@@ -201,6 +213,37 @@ end
 function absorb(sponge::ByteSponge, x::NTuple{N, U}) where {N, U<:Unsigned}
     for val in x
         sponge = absorb(sponge, val)
+    end
+    sponge
+end
+
+"""
+    absorb(sponge::AbstractSponge, block::AbstractVector{<:Unsigned})
+
+Ingest each element of `block` into `sponge`.
+"""
+function absorb(sponge::ByteSponge{rate}, block::AbstractVector{U}) where {rate, U <: UInt8to64}
+    if length(block) * sizeof(U) >= 8 * rate - sponge.byte >= 8
+        start = min(firstindex(block), lastindex(block))
+        aligngap = sponge.byte % sizeof(UInt64)
+        if aligngap != 0
+            for b in view(block, start:start+aligngap)
+                sponge = absorb(sponge, b)
+            end
+            start += aligngap
+        end
+        remaining_bytes = (length(block) - aligngap) * sizeof(U)
+        remaining_u64s = (remaining_bytes - remaining_bytes % sizeof(UInt64)) ÷ sizeof(U)
+        sponge64 = convert(Sponge, sponge)
+        sponge64 = absorb(sponge64, reinterpret(UInt64, view(block, start:start-1+remaining_u64s)))
+        sponge = convert(ByteSponge, sponge64)
+        for b in view(block, start+remaining_u64s:lastindex(block))
+            sponge = absorb(sponge, b)
+        end
+    else
+        for b in block
+            sponge = absorb(sponge, b)
+        end
     end
     sponge
 end
