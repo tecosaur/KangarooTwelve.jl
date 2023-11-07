@@ -1,6 +1,5 @@
 function k12_singlethreaded(message::AbstractVector{<:UInt8to64}, customisation::AbstractVector{<:UInt8to64})
-    vine = absorb(CoralVineSeedling{RATE}(), message)
-    vine = absorb(vine, customisation)
+    vine = absorb(CoralVineSeedling{RATE}(), message, customisation)
     vine = absorb_length(vine, customisation)
     squeeze(UInt128, finalise(vine))
 end
@@ -30,8 +29,28 @@ function k12_singlethreaded_simd(message::AbstractVector{U}, customisation::Abst
         trunk = absorb(vine.trunk, ntupleinterpret(UInt64, u64x4x4))
         vine = CoralVine(trunk, vine.leaf, vine.nbytes + BLOCK_SIZE * SIMD_FACTOR)
     end
-    vine = absorb(vine, view(message, slices.tail))
-    vine = absorb(vine, customisation)
+    vine = absorb(vine, view(message, slices.tail), customisation)
+    vine = absorb_length(vine, customisation)
+    squeeze(UInt128, finalise(vine))
+end
+
+function k12_multithreaded(message::AbstractVector{U}, customisation::AbstractVector{<:UInt8to64}) where {U<:UInt8to64}
+    if length(message) <= BLOCK_SIZE÷sizeof(U)
+        return k12_singlethreaded(message, customisation)
+    end
+    slices = slice_message(U, length(message), Val{1}())
+    cvs = Vector{UInt64}(undef, 4 * length(slices.blocks))
+    @threads for i in 1:length(slices.blocks)
+        bstart = slices.blocks[i]
+        block = reinterpret(UInt64, view(message, bstart:bstart-1+BLOCK_SIZE÷sizeof(U)))
+        cv = turboshake(NTuple{4, UInt64}, block, K12_SUFFIXES.leaf)
+        for j in 1:4
+            cvs[4(i-1)+j] = cv[j]
+        end
+    end
+    vine = absorb(CoralVineSeedling{RATE}(), view(message, slices.init))::CoralVine{RATE}
+    vine = CoralVine(absorb(vine.trunk, cvs), vine.leaf, vine.nbytes + length(cvs) * BLOCK_SIZE ÷ 4)
+    vine = absorb(vine, view(message, slices.tail), customisation)
     vine = absorb_length(vine, customisation)
     squeeze(UInt128, finalise(vine))
 end
@@ -44,28 +63,6 @@ function slice_message(U::Type, mlen::Int, ::Val{block_multiple}) where {block_m
     blocks = last(init)+1:m_block_size:blocks_end-m_block_size+1
     tail = blocks_end+1:mlen
     (; init, blocks, tail)
-end
-
-function k12_multithreaded(message::AbstractVector{U}, customisation::AbstractVector{<:UInt8to64}) where {U<:UInt8to64}
-    if length(message) <= BLOCK_SIZE÷sizeof(U)
-        return k12_singlethreaded(message, customisation)
-    end
-    slices = slice_message(U, length(message), Val{1}())
-    cvs = Vector{UInt64}(undef, 4 * length(slices.blocks))
-    @threads for i in 1:length(slices.blocks)
-        bstart = slices.blocks[i]
-        block = reinterpret(UInt64, view(message, bstart:bstart-1+BLOCK_SIZE÷sizeof(U)))
-        cv = @inline turboshake(NTuple{4, UInt64}, block, K12_SUFFIXES.leaf)
-        for j in 1:4
-            cvs[4(i-1)+j] = cv[j]
-        end
-    end
-    vine = absorb(CoralVineSeedling{RATE}(), view(message, slices.init))::CoralVine{RATE}
-    vine = CoralVine(absorb(vine.trunk, cvs), vine.leaf, vine.nbytes + length(cvs) * BLOCK_SIZE ÷ 4)
-    vine = absorb(vine, view(message, slices.tail))
-    vine = absorb(vine, customisation)
-    vine = absorb_length(vine, customisation)
-    squeeze(UInt128, finalise(vine))
 end
 
 """

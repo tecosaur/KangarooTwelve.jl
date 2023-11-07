@@ -40,6 +40,8 @@ The distinction between these two stages is made with the subtypes
 """
 abstract type AbstractCoralVine{rate} end
 
+absorb(vine::AbstractCoralVine, x, xs...) = absorb(absorb(vine, x), xs...)
+
 """
     CoralVineSeedling{rate}
 
@@ -134,15 +136,15 @@ function absorb((; trunk, leaf, nbytes)::CoralVine{rate}, leaflet::AbstractVecto
         leaf = ByteSponge{rate}()
         for block in partition(ntofill+1:length(leaflet), BLOCK_SIZE÷sizeof(U))
             if length(block) == BLOCK_SIZE÷sizeof(U)
-                trunk = absorb(trunk, NTuple{4, UInt64}, reinterpret(UInt64, view(leaflet, block)))
+                cvs = turboshake(NTuple{4, UInt64}, reinterpret(UInt64, view(leaflet, block)), K12_SUFFIXES.leaf)
+                trunk = absorb(trunk, cvs)
             else
                 leaf = absorb(ByteSponge{rate}(), view(leaflet, block))
             end
         end
         CoralVine(trunk, leaf, total_bytes)
     else
-        (@noinline () -> @error "Oh no! Something has gone very wrong, this message should never be printed 😟")()
-        CoralVine(trunk, leaf, nbytes)
+        absorb(CoralVine(trunk, leaf, nbytes), reinterpret(UInt8, leaflet))
     end
 end
 
@@ -151,7 +153,7 @@ function absorb(vine::CoralVine{rate}, x::U) where {rate, U<:UInt8to64}
         CoralVine(vine.trunk, absorb(vine.leaf, x), vine.nbytes + sizeof(U))
     elseif (vine.nbytes % BLOCK_SIZE) + sizeof(U) == BLOCK_SIZE
         CoralVine(absorb(vine.trunk, squeeze(NTuple{4, UInt64}, vine.leaf)),
-             absorb(ByteSponge{rate}(), x), vine.nbytes + sizeof(U))
+                  absorb(ByteSponge{rate}(), x), vine.nbytes + sizeof(U))
     else # `x` is not aligned with the partial data, so absorb byte by byte
         for byte in ntupleinterpret(UInt8, x)
             vine = absorb(vine, byte)

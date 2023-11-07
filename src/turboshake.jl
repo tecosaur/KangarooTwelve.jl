@@ -161,16 +161,8 @@ squeeze(::Type{U}, state::NTuple{25, UInt64}, capacity::Val) where {U <: Unsigne
     squeeze(NTuple{1, U}, state, capacity) |> first
 
 # For SIMD results
-# squeeze(U::Type, states::NTuple{N, NTuple{25, UInt64}}, capacity::Val) where {N} =
-#     ntuple(i -> squeeze(U, states[i], capacity), Val{N}())
-@generated function squeeze(U::Type, states::NTuple{N, NTuple{25, UInt64}}, capacity::Val) where {N}
-    :(@ntuple $N i -> squeeze(U, states[i], capacity))
-end
-squeeze(U::Type, states::NTuple{25, Vec{N, UInt64}}, capacity::Val) where {N} =
-    squeeze(U, unwrap_simd(states), capacity)
-
-unwrap_simd(vals::NTuple{V, Vec{N, T}}) where {V, N, T} =
-    ntuple(n -> ntuple(v -> vals[v][n], Val{V}()), Val{N}())
+squeeze(U::Type, states::NTuple{N, NTuple{25, UInt64}}, capacity::Val) where {N} =
+    ntuple(i -> squeeze(U, states[i], capacity), Val{N}())
 
 # `squeeze!` isn't actually called anywhere, but it seems nice to have for completeness.
 """
@@ -200,6 +192,9 @@ end
 
 # Turboshake frontend
 
+# These functions are manually inlined in order to facilitate the compiler
+# determining that no allocations are actually needed.
+
 """
     turboshake(output::Type, message::AbstractVector{<:UInt8to64},
                delimsuffix::UInt8=0x80, ::Val{capacity} = Val{$CAPACITY}())
@@ -209,7 +204,7 @@ performing TurboSHAKE on `message` with a certain `capacity` and `delimsuffix`.
 
 See also: [`absorb`](@ref), [`pad`](@ref), and [`squeeze`](@ref).
 """
-function turboshake(output::Type, # <:Unsigned or NTuple{n, <:Unsigned}
+@inline function turboshake(output::Type, # <:Unsigned or NTuple{n, <:Unsigned}
                     message::AbstractVector{<:UInt8to64},
                     delimsuffix::UInt8=0x80, ::Val{capacity} = Val{CAPACITY}()) where {capacity}
     state = absorb(EMPTY_STATE, Val{capacity}(), message)
@@ -221,7 +216,7 @@ function turboshake(output::Type, # <:Unsigned or NTuple{n, <:Unsigned}
 end
 
 # SIMD version
-function turboshake(output::Type, # <:Unsigned or NTuple{n, <:Unsigned}
+@inline function turboshake(output::Type, # <:Unsigned or NTuple{n, <:Unsigned}
                     message::NTuple{N, <:AbstractVector{<:UInt8to64}},
                     delimsuffix::UInt8=0x80, ::Val{capacity} = Val{CAPACITY}()) where {N, capacity}
     empty_state = ntuple(_ -> Vec(ntuple(_ -> zero(UInt64), Val{N}())), Val{25}())

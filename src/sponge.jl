@@ -41,6 +41,24 @@ a time. To handle these two cases we have the [`Sponge`](@ref) and [`ByteSponge`
 """
 abstract type AbstractSponge{rate} end
 
+absorb(sponge::AbstractSponge, x, xs...) = absorb(absorb(sponge, x), xs...)
+
+"""
+    squeeze(T::Type, sponge::AbstractSponge)
+
+Squeeze a `T` out of `sponge`.
+"""
+squeeze(T::Type, (; state)::AbstractSponge{rate}) where {rate} =
+    squeeze(T, state, Val{rate2cap(rate)}())
+
+"""
+    squeeze!(output::Vector{UInt64}, sponge::AbstractSponge)
+
+Squeeze `sponge` into `output`.
+"""
+squeeze!(output::AbstractVector{<:Unsigned}, (; state)::AbstractSponge{rate}) where {rate} =
+    squeeze!(output, state, Val{rate2cap(rate)}())
+
 """
     Sponge{rate}
 
@@ -56,7 +74,6 @@ struct Sponge{rate} <: AbstractSponge{rate}
 end
 
 Sponge{rate}() where {rate} = Sponge{rate}(EMPTY_STATE, 1)
-Sponge() = Sponge{RATE}()
 
 function absorb((; state, lane)::Sponge{rate}, newlane::UInt64) where {rate}
     state = setindex(state, state[lane] ⊻ newlane, lane)
@@ -112,33 +129,6 @@ function absorb((; state, lane)::Sponge{rate}, lanes::AbstractVector{UInt64}) wh
                view(lanes, (rate - lane + 2):lastindex(lanes)))
     end
 end
-
-"""
-    squeeze(T::Type, sponge::AbstractSponge)
-
-Squeeze a `T` out of `sponge`.
-"""
-squeeze(T::Type, (; state)::AbstractSponge{rate}) where {rate} =
-    squeeze(T, state, Val{rate2cap(rate)}())
-
-"""
-    squeeze!(output::Vector{UInt64}, sponge::AbstractSponge)
-
-Squeeze `sponge` into `output`.
-"""
-squeeze!(output::AbstractVector{<:Unsigned}, (; state)::AbstractSponge{rate}) where {rate} =
-    squeeze!(output, state, Val{rate2cap(rate)}())
-
-"""
-    absorb(sponge::AbstractSponge, as::Type{<:Unsigned}, leaf::AbstractVector{<:Unsigned})
-
-Ingest `leaf` into `sponge` by transforming it to an `as` via `turboshake`, and
-absorbing that result.
-"""
-@inline absorb(sponge::AbstractSponge{rate}, T::Type, leaf::AbstractVector{U}) where {rate, U<:UInt8to64} =
-    absorb(sponge, turboshake(T, leaf, K12_SUFFIXES.leaf))
-
-# absorb(sponge::Sponge, x::Unsigned, xs::Unsigned...) = absorb(absorb(sponge, x), xs...)
 
 # At the very end of KangarooTwelve, we want to absorb
 # sub-UInt64 values. For this more limited capability,
