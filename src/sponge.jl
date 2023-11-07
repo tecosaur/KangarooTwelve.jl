@@ -215,9 +215,9 @@ Ingest each element of `block` into `sponge`.
 function absorb(sponge::ByteSponge{rate}, block::AbstractVector{U}) where {rate, U <: UInt8to64}
     if length(block) * sizeof(U) >= 8 * rate - sponge.byte >= 8
         start = min(firstindex(block), lastindex(block))
-        aligngap = sponge.byte % sizeof(UInt64)
+        aligngap = (sponge.byte % sizeof(UInt64)) ÷ sizeof(U)
         if aligngap != 0
-            for b in view(block, start:start+aligngap)
+            for b in view(block, start:start-1+aligngap)
                 sponge = absorb(sponge, b)
             end
             start += aligngap

@@ -63,7 +63,7 @@ end
     sponge = absorb(sponge, 0x5555555555555555)
     @test sponge.state[2] == 0x5555555555555544
     @test sponge.state[3] == 0x0000000000000055
-    sponge = absorb(absorb(absorb(sponge, 0x66), 0x6666), 0x66666666)
+    sponge = absorb(sponge, 0x66, 0x6666, 0x66666666)
     @test sponge.state[3] == 0x6666666666666655
     @test sponge.state[4] == 0x0000000000000000
     for _ in 4:rate-1
@@ -72,20 +72,25 @@ end
     @test sum(sponge.state) == 0x3568ace824579ba2
     @test absorb(sponge, 0x1111111111111111).state[1] == 0x070513f3bdbfaa6f
     @test absorb(sponge, (0x11111111, 0x11111111)).state[1] == 0x070513f3bdbfaa6f
-    @test absorb(absorb(sponge, 0x22222222), 0x1111111111111111).state[1] == 0xc2b3c50159cb7aeb
-    @test absorb(absorb(sponge, 0x22222222), [0x1111, 0x1111, 0x1111, 0x1111]).state[1] == 0xc2b3c50159cb7aeb
+    @test absorb(sponge, 0x22222222, 0x1111111111111111).state[1] == 0xc2b3c50159cb7aeb
+    sponge = absorb(ByteSponge{rate}(), UInt64.(1:rate-2))
+    @test absorb(sponge, 0x22222222, [0x1111, 0x1111, 0x1111, 0x1111]).state[1] == UInt64(1)
+    @test absorb(sponge, 0x22222222, [0x1111, 0x1111, 0x1111, 0x1111, 0x1111]).state[1] == UInt64(1)
+    @test absorb(sponge, 0x22222222, [0x1111, 0x1111, 0x1111, 0x1111, 0x1111, 0x1111]).state[1] == 0xa4241c75799460e2
+    @test absorb(sponge, 0x22222222, 0x1111, 0x1111, 0x1111, 0x1111, 0x1111, 0x1111).state[1] == 0xa4241c75799460e2
     # Lane Sponge
     sponge = Sponge{rate}()
     @test absorb(sponge, 0x1111111111111111).state[1] == 0x1111111111111111
     @test absorb(sponge, fill(0x1111111111111111, rate-1)).state[1] == 0x1111111111111111
     @test absorb(sponge, fill(0x1111111111111111, rate-1)).lane == rate
     @test absorb(sponge, fill(0x1111111111111111, rate)).state[1] == 0x21cd3a0d11e3ac4a
-    @test absorb(absorb(sponge, fill(0x1111111111111111, rate-1)), 0x1111111111111111).state[1] == 0x21cd3a0d11e3ac4a
-    @test absorb(absorb(sponge, fill(0x1111111111111111, rate-1)), 0x1111111111111111).lane == 1
-    @test absorb(absorb(sponge, 0x1111111111111111), fill(0x1111111111111111, rate-1)).state[1] == 0x21cd3a0d11e3ac4a
-    @test absorb(absorb(sponge, 0x1111111111111111), fill(0x1111111111111111, rate-1)).lane == 1
+    @test absorb(sponge, fill(0x1111111111111111, rate-1), 0x1111111111111111).state[1] == 0x21cd3a0d11e3ac4a
+    @test absorb(sponge, fill(0x1111111111111111, rate-1), 0x1111111111111111).lane == 1
+    @test absorb(sponge, 0x1111111111111111, fill(0x1111111111111111, rate-1)).state[1] == 0x21cd3a0d11e3ac4a
+    @test absorb(sponge, 0x1111111111111111, fill(0x1111111111111111, rate-1)).lane == 1
     @test absorb(sponge, fill(0x1111111111111111, 3*rate)).state[1] == 0x74ff8ab126700c8e
     @test absorb(sponge, fill(0x1111111111111111, 3*rate)).lane == 1
+    @test absorb(sponge, Tuple(UInt64.(1:rate))).state[1] == absorb(EMPTY_STATE, Tuple(UInt64.(1:21)))[1]
 end
 
 @testset "Vine edge-cases" begin
@@ -100,10 +105,9 @@ end
     @test vine.leaf.state[1] == 0x0000000000002222
     @test vine.nbytes == BLOCK_SIZE + 2
     vine = CoralVine(Sponge{rate}(), ByteSponge{rate}(), UInt64(BLOCK_SIZE - 4))
-    @test absorb(absorb(vine, 0x1122), 0x3344).trunk.state[1] == 0x0000000000001122
-    @test absorb(absorb(vine, 0x1122), 0x3344).leaf.state[1] == 0x0000000000003344
-    @test absorb(vine, 0x8877665544332211) ==
-        absorb(absorb(absorb(absorb(absorb(absorb(absorb(absorb(vine, 0x11), 0x22), 0x33), 0x44), 0x55), 0x66), 0x77), 0x88)
+    @test absorb(vine, 0x1122, 0x3344).trunk.state[1] == 0x0000000000001122
+    @test absorb(vine, 0x1122, 0x3344).leaf.state[1] == 0x0000000000003344
+    @test absorb(vine, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88) == absorb(vine, 0x8877665544332211)
 end
 
 @testset "Sponge squeezing" begin
@@ -271,4 +275,5 @@ end
     @test k12("", "") == 0x51371bcabfa79dd105423bfc50d4c21a
     @test k12(IOBuffer([0x61])) == 0x127fe10dabd37226d158e632536bad9e
     @test k12(IOBuffer(), [0x61]) == 0xa381de50bbb72362f91d547c744af984
+    @test k12(bitpattern(17^6)) == 0x32f1aafe727f36a69fe8a4a88207393c
 end
