@@ -21,12 +21,18 @@ function k12_singlethreaded_simd(message::AbstractVector{U}, customisation::Abst
     end
     slices = slice_message(U, length(message), Val{SIMD_FACTOR}())
     vine = absorb(CoralVineSeedling{RATE}(), view(message, slices.init))::CoralVine{RATE}
-    bsize = BLOCK_SIZE÷sizeof(U)
-    for simd_start in slices.blocks
-        blocks = ntuple(i -> reinterpret(UInt64, view(message, simd_start+(i-1)*bsize:simd_start+i*bsize-1)),
-                        Val{SIMD_FACTOR}())
-        u64x4x4 = turboshake(NTuple{4, UInt64}, blocks, K12_SUFFIXES.leaf)
-        trunk = absorb(vine.trunk, ntupleinterpret(UInt64, u64x4x4))
+    chunk64size = BLOCK_SIZE÷sizeof(UInt64)
+    middle64 = if message isa DenseVector
+        # Because `getindex` is inefficient with `reinterpret`ed arrays for whatever reason.
+        unsafe_wrap(Array{UInt64}, Ptr{UInt64}(pointer(message, first(slices.middle))), (length(slices.middle) * sizeof(U)÷sizeof(UInt64),))
+    else
+        reinterpret(UInt64, view(message, slices.middle))
+    end
+    for bindex in 1:slices.nblocks
+        offset = (bindex-1) * BLOCK_SIZE÷sizeof(UInt64) * SIMD_FACTOR + 1
+        blocks = ntuple(i -> view(middle64, (offset + (i-1) * chunk64size):(offset + i*chunk64size - 1)), Val{SIMD_FACTOR}())
+        u64x4xSIMD = turboshake(NTuple{4, UInt64}, blocks, K12_SUFFIXES.leaf)
+        trunk = absorb(vine.trunk, ntupleinterpret(UInt64, u64x4xSIMD))
         vine = CoralVine(trunk, vine.leaf, vine.nbytes + BLOCK_SIZE * SIMD_FACTOR)
     end
     vine = absorb(vine, view(message, slices.tail), customisation)
@@ -55,14 +61,44 @@ function k12_multithreaded(message::AbstractVector{U}, customisation::AbstractVe
     squeeze(UInt128, finalise(vine))
 end
 
+function k12_multithreaded_simd(message::AbstractVector{U}, customisation::AbstractVector{<:UInt8to64}) where {U<:UInt8to64}
+    if length(message) <= BLOCK_SIZE÷sizeof(U)
+        return k12_singlethreaded(message, customisation)
+    end
+    slices = slice_message(U, length(message), Val{SIMD_FACTOR}())
+    cvs = Vector{UInt64}(undef, 4 * slices.nblocks * SIMD_FACTOR)
+    chunk64size = BLOCK_SIZE÷sizeof(UInt64)
+    middle64 = if message isa DenseVector
+        # Because `getindex` is inefficient with `reinterpret`ed arrays for whatever reason.
+        unsafe_wrap(Array{UInt64}, Ptr{UInt64}(pointer(message, first(slices.middle))), (length(slices.middle) * sizeof(U)÷sizeof(UInt64),))
+    else
+        reinterpret(UInt64, view(message, slices.middle))
+    end
+    @threads for bindex in 1:slices.nblocks
+        offset = (bindex-1) * BLOCK_SIZE÷sizeof(UInt64) * SIMD_FACTOR + 1
+        blocks = ntuple(i -> view(middle64, (offset + (i-1) * chunk64size):(offset + i*chunk64size - 1)), Val{SIMD_FACTOR}())
+        u64x4xSIMD = ntupleinterpret(UInt64, turboshake(NTuple{4, UInt64}, blocks, K12_SUFFIXES.leaf))
+        for j in 1:length(u64x4xSIMD)
+            cvs[4*SIMD_FACTOR*(bindex-1)+j] = u64x4xSIMD[j]
+        end
+    end
+    vine = absorb(CoralVineSeedling{RATE}(), view(message, slices.init))::CoralVine{RATE}
+    vine = CoralVine(absorb(vine.trunk, cvs), vine.leaf, vine.nbytes + length(cvs) * BLOCK_SIZE ÷ 4)
+    vine = absorb(vine, view(message, slices.tail), customisation)
+    vine = absorb_length(vine, customisation)
+    squeeze(UInt128, finalise(vine))
+end
+
 function slice_message(U::Type, mlen::Int, ::Val{block_multiple}) where {block_multiple}
     u_block_size = BLOCK_SIZE÷sizeof(U)
     m_block_size = block_multiple * u_block_size
     init = if mlen >= u_block_size 1:min(mlen, u_block_size) else 1:0 end
-    blocks_end = ((mlen - u_block_size) ÷ m_block_size) * m_block_size + last(init)
+    nblocks = (mlen - u_block_size) ÷ m_block_size
+    blocks_end = nblocks * m_block_size + last(init)
+    middle=last(init)+1:blocks_end
     blocks = last(init)+1:m_block_size:blocks_end-m_block_size+1
     tail = blocks_end+1:mlen
-    (; init, blocks, tail)
+    (; init, nblocks, middle, blocks, tail)
 end
 
 """
