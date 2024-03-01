@@ -135,9 +135,9 @@ SIMD and multithreading.
 """
 function k12(data::AbstractVector{U}, customisation::AbstractVector{<:Unsigned}=UInt8[]; thread::Bool=true) where {U<:Unsigned}
     if thread && length(data) * sizeof(U) > 48 * 1024 # Seems to be worthwhile above ~48 KiB
-        k12_multithreaded(data, customisation)
+        k12_multithreaded_simd(data, customisation)
     else
-        k12_singlethreaded(data, customisation)
+        k12_singlethreaded_simd(data, customisation)
     end
 end
 
