@@ -2,8 +2,9 @@
 using SHA
 using CRC32c
 using MD5
+using Nettle
 using Blake3Hash
-using KangarooTwelve: k12_singlethreaded, k12_singlethreaded_simd, k12_multithreaded, BLOCK_SIZE
+using KangarooTwelve: k12_singlethreaded, k12_singlethreaded_simd, k12_multithreaded_simd, BLOCK_SIZE
 using .GC
 
 using CairoMakie
@@ -27,18 +28,33 @@ alg_hashers = Dict(
     :sha3_256 => sha3_256,
     :md5 => md5,
     :crc32c => crc32c,
+    :nettle_sha256 => function (data)
+        hasher = Nettle.Hasher("SHA256")
+        Nettle.update!(hasher, data)
+        Nettle.digest!(hasher)
+    end,
+    :nettle_sha3_256 => function (data)
+        hasher = Nettle.Hasher("SHA3_256")
+        Nettle.update!(hasher, data)
+        Nettle.digest!(hasher)
+    end,
+    :nettle_md5 => function (data)
+        hasher = Nettle.Hasher("MD5")
+        Nettle.update!(hasher, data)
+        Nettle.digest!(hasher)
+    end,
     :k12_singlethreaded => Base.Fix2(k12_singlethreaded, UInt[]),
     :k12_singlethreaded_simd => Base.Fix2(k12_singlethreaded_simd, UInt[]),
-    :k12_multithreaded => Base.Fix2(k12_multithreaded, UInt[]),
+    :k12_multithreaded => Base.Fix2(k12_multithreaded_simd, UInt[]),
     :blake3 => function (data)
         hasher = Blake3Ctx()
         Blake3Hash.update!(hasher, data)
-        digest(hasher)
+        Blake3Hash.digest(hasher)
     end
 )
 
 function bench(alg::Symbol, size::Int; repeats::Int=clamp(round(Int, log2(2^30/size))^3, 5, 10000))
-    alg == :k12_multithreaded && size <= BLOCK_SIZE && return NaN
+    alg == :k12_multithreaded && size <= 4 * BLOCK_SIZE && return NaN
     alg == :k12_singlethreaded_simd && size <= 4 * BLOCK_SIZE && return NaN
     hashfn = alg_hashers[alg]
     hashfn([0x01]) # Potentially trigger JIT
@@ -61,7 +77,8 @@ function bench(alg::Symbol, size::Int; repeats::Int=clamp(round(Int, log2(2^30/s
     minimum(times) / (batchsize * 10^9)
 end
 
-all_algs = [:crc32c, :sha256, :sha3_256, :md5, :blake3, :k12_singlethreaded, :k12_multithreaded] # add SIMD once it's better
+all_algs = [:crc32c, :sha256, :sha3_256, :md5, :nettle_sha256, :nettle_sha3_256, :nettle_md5,
+            :blake3, :k12_singlethreaded, :k12_singlethreaded_simd, :k12_multithreaded] # add SIMD once it's better
 data_sizes = 2 .^ (10:30)
 
 alg_labels = Dict(:k12_singlethreaded => "k12 (singlethreaded)",
@@ -70,14 +87,17 @@ alg_labels = Dict(:k12_singlethreaded => "k12 (singlethreaded)",
                   :sha256 => "SHA2-256", :sha3_256 => "SHA3-256")
 
 alg_colors =  Dict(
-    :crc32c             => ColorSchemes.tol_bright.colors[end],
-    :sha256             => ColorSchemes.tol_rainbow.colors[21],
-    :sha3_256           => ColorSchemes.tol_rainbow.colors[24],
-    :md5                => ColorSchemes.tol_rainbow.colors[7],
-    :blake3             => ColorSchemes.tol_rainbow.colors[12],
-    :k12_singlethreaded => ColorSchemes.tol_rainbow.colors[16],
+    :crc32c                  => ColorSchemes.tol_bright.colors[end],
+    :sha256                  => ColorSchemes.tol_rainbow.colors[21],
+    :sha3_256                => ColorSchemes.tol_rainbow.colors[24],
+    :md5                     => ColorSchemes.tol_rainbow.colors[7],
+    :nettle_sha256           => ColorSchemes.tol_rainbow.colors[2],
+    :nettle_sha3_256         => ColorSchemes.tol_rainbow.colors[3],
+    :nettle_md5              => ColorSchemes.tol_rainbow.colors[4],
+    :blake3                  => ColorSchemes.tol_rainbow.colors[12],
+    :k12_singlethreaded      => ColorSchemes.tol_rainbow.colors[16],
     :k12_singlethreaded_simd => ColorSchemes.tol_rainbow.colors[17],
-    :k12_multithreaded  => ColorSchemes.tol_rainbow.colors[15],
+    :k12_multithreaded       => ColorSchemes.tol_rainbow.colors[15],
 )
 
 function scalingdata(algs::Vector{Symbol} = all_algs, dsizes::Vector{Int} = data_sizes)
