@@ -7,20 +7,16 @@ package are compared against:
 + =md5= from [[https://github.com/JuliaCrypto/MD5.jl][MD5.jl]]
 + blake3 from [[https://github.com/pixel27/Blake3Hash.jl][Blake3Hash.jl]]
 
-Note that this benchmark was run on a machine with AVX512, machines without
-AVX512 (like the 13-14th gen Intel consumer CPUs), will experience a smaller
-SIMD benefit.
-
 [[file:scaling-benchmark.svg]]
 
 *System information*
 
-+ AMD 7900X
++ Intel i5-13600k
 + Linux 6.6 (openSUSE)
 
 *Version Information*
 
 + Julia 1.10-rc1
 + SHA v0.7.0
-+ MD5 v0.2.3
++ MD5 v0.2.2
 + Blake3Hash v0.3.0
